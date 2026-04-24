@@ -66,7 +66,13 @@ export default function ChatPanel({
     <div className={`flex flex-col h-full rounded-xl border ${borderClass} ${glowClass} bg-zinc-900/80 overflow-hidden`}>
       <div className={`px-4 py-3 border-b ${borderClass} ${headerBg} shrink-0`}>
         <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
-        <p className="text-xs text-zinc-500">{subtitle}{model && <span className="ml-1.5 text-zinc-600">· {model}</span>}</p>
+        <p className="text-xs text-zinc-500">{subtitle}</p>
+        {model && (
+          <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-[10px] font-medium text-zinc-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {model}
+          </div>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">

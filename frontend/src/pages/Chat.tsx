@@ -32,7 +32,7 @@ export default function Chat() {
   const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null);
   const [totalMemories, setTotalMemories] = useState(0);
   const [avgHealth, setAvgHealth] = useState(0);
-  const [modelName, setModelName] = useState<string>('');
+  const [modelName, setModelName] = useState<string>('Amazon Nova Lite');
 
   const [input, setInput] = useState('');
   const [currentHint, setCurrentHint] = useState<string | null>(null);
@@ -149,7 +149,7 @@ export default function Chat() {
     }
   }, []);
 
-  const handlePersonaChange = useCallback((id: string) => {
+  const handlePersonaChange = useCallback(async (id: string) => {
     setSelectedPersona(id);
     setLeftMessages([]);
     setRightMessages([]);
@@ -158,7 +158,12 @@ export default function Chat() {
     setContradiction(null);
     setScenarioStep(0);
     setTurnCount(0);
-  }, []);
+    // Reset and re-seed with new persona
+    await resetSession(sessionId).catch(() => {});
+    if (id !== 'fresh') {
+      await seedPersona(sessionId, id).catch(() => {});
+    }
+  }, [sessionId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
