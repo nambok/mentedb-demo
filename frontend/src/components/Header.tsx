@@ -62,7 +62,7 @@ export default function Header({
         </button>
 
         <a
-          href="https://github.com/nambok/mentedb"
+          href="https://github.com/nambok/mentedb-demo"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
