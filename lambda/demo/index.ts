@@ -249,7 +249,7 @@ async function mentedbRestGet(
 // Bedrock (Claude) helper
 // ---------------------------------------------------------------------------
 
-const BEDROCK_MODEL_ID = "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+const BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0";
 
 async function callBedrock(
   systemPrompt: string,
