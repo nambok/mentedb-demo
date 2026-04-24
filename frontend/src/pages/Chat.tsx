@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Send } from 'lucide-react';
+import { Send, RefreshCw } from 'lucide-react';
 import ChatPanel, { type ChatMessage } from '../components/ChatPanel';
 import MemoryFeed from '../components/MemoryFeed';
 import MemoryDrawer from '../components/MemoryDrawer';
@@ -292,6 +292,16 @@ export default function Chat() {
         )}
 
         <form onSubmit={handleSubmit} className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSessionBreak}
+            disabled={isLoading || messages.length === 0}
+            className="px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 shrink-0"
+            title="Start a new session — clears chat history but memories persist"
+          >
+            <RefreshCw size={13} />
+            <span className="hidden sm:inline">New Session</span>
+          </button>
           <input
             ref={inputRef}
             type="text"
