@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown, ChevronUp, Zap, BookMarked } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -18,9 +20,10 @@ interface ChatPanelProps {
   model?: string;
 }
 
-function TypingMessage({ content }: { content: string }) {
+function TypingMarkdown({ content }: { content: string }) {
   const text = content ?? '';
   const [displayed, setDisplayed] = useState(0);
+  const done = displayed >= text.length;
 
   useEffect(() => {
     setDisplayed(0);
@@ -37,10 +40,18 @@ function TypingMessage({ content }: { content: string }) {
     return () => clearInterval(timer);
   }, [text]);
 
+  if (done) {
+    return (
+      <div className="prose-chat">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      </div>
+    );
+  }
+
   return (
     <span>
       {text.slice(0, displayed)}
-      {displayed < text.length && <span className="typing-cursor" />}
+      <span className="typing-cursor" />
     </span>
   );
 }
@@ -184,9 +195,13 @@ function MessageBubble({
           }`}
         >
           {!isUser && isLatest ? (
-            <TypingMessage content={message.content} />
-          ) : (
+            <TypingMarkdown content={message.content ?? ''} />
+          ) : isUser ? (
             <span className="whitespace-pre-wrap">{message.content ?? ''}</span>
+          ) : (
+            <div className="prose-chat">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content ?? ''}</ReactMarkdown>
+            </div>
           )}
         </div>
       </div>
