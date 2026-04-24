@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Zap, ShieldAlert, RefreshCw, Puzzle, Link2, ClipboardList } from 'lucide-react';
+import { Zap, ShieldAlert, RefreshCw, Puzzle, Link2, ClipboardList, Brain } from 'lucide-react';
 
 export interface ScenarioStep {
   user: string;
@@ -16,6 +16,22 @@ export interface Scenario {
 }
 
 export const scenarios: Scenario[] = [
+  {
+    id: 'full-demo',
+    title: 'The Full Experience',
+    icon: Brain,
+    description: 'See every MenteDB feature in one conversation',
+    feature: 'All Features Combined',
+    steps: [
+      { user: "I'm building a SaaS app called TaskPilot using Next.js and Supabase", hint: "🧠 MenteDB stores project context — watch the memory panel light up" },
+      { user: "I prefer Tailwind CSS and always use TypeScript strict mode", hint: "📌 Preferences stored as semantic memories" },
+      { user: "Last time I used Firebase it was a nightmare — auth kept breaking in production", hint: "🔴 Pain signal recorded — MenteDB will warn about Firebase in the future" },
+      { user: "Actually I switched from Supabase to PlanetScale yesterday", hint: "⚡ Contradiction detected! Supabase → PlanetScale" },
+      { user: "My tech lead Sarah wants us to ship the MVP by end of Q3", hint: "📋 Fact extraction: person (Sarah), deadline (Q3), goal (MVP)" },
+      { user: "Based on everything you know about me, suggest a deployment strategy", hint: "🧩 Context assembly: combines project, preferences, pain signals, and deadline into tailored advice" },
+      { user: "What database am I using and why did I switch?", hint: "🔗 Entity resolution + contradiction memory — knows PlanetScale, remembers the switch from Supabase" },
+    ],
+  },
   {
     id: 'contradiction',
     title: 'The Contradiction Catcher',

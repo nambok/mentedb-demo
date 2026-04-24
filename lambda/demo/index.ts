@@ -91,7 +91,7 @@ async function getSecrets(): Promise<Secrets> {
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "*";
 const RATE_LIMIT_TABLE = process.env.RATE_LIMIT_TABLE ?? "mentedb-demo-rate-limits";
-const MAX_REQUESTS_PER_HOUR = 30;
+const MAX_REQUESTS_PER_HOUR = 500;
 
 function corsHeaders(origin?: string): Record<string, string> {
   const allowed =
@@ -633,7 +633,7 @@ export const handler = async (
   if (!withinLimit) {
     return respond(
       429,
-      { error: "Rate limit exceeded. Max 30 requests per hour." },
+      { error: "Rate limit exceeded. Max 500 requests per hour." },
       origin
     );
   }
