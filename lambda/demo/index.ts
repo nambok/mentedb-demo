@@ -610,32 +610,30 @@ async function handleSeed(
 
   const project = `demo-${session_id}`;
 
-  // Seed each memory with project-scoped tags
-  let seeded = 0;
-  for (const mem of memories) {
-    try {
-      await mentedbToolCall(secrets, "store_memory", {
+  // Seed all memories in parallel for fast load
+  const results = await Promise.allSettled(
+    memories.map((mem) =>
+      mentedbToolCall(secrets, "store_memory", {
         content: mem.content,
         memory_type: mem.memory_type,
         tags: [...mem.tags, `project:${project}`],
-      });
-      seeded++;
-    } catch (err) {
-      console.error(`Failed to seed memory: ${mem.content}`, err);
+      })
+    )
+  );
+  const seeded = results.filter((r) => r.status === "fulfilled").length;
+  for (const r of results) {
+    if (r.status === "rejected") {
+      console.error(`Failed to seed memory:`, r.reason);
     }
   }
 
-  // Also do a process_turn so the engine indexes these for this project
-  try {
-    await mentedbToolCall(secrets, "process_turn", {
-      user_message: `[system] Persona initialized: ${persona}`,
-      assistant_response: "",
-      turn_id: 0,
-      project_context: project,
-    });
-  } catch (err) {
-    console.error("process_turn for seed project failed:", err);
-  }
+  // Fire-and-forget process_turn so it doesn't block the response
+  mentedbToolCall(secrets, "process_turn", {
+    user_message: `[system] Persona initialized: ${persona}`,
+    assistant_response: "",
+    turn_id: 0,
+    project_context: project,
+  }).catch((err) => console.error("process_turn for seed project failed:", err));
 
   return respond(200, { ok: true, seeded, memories: memories.map((m, i) => ({
     id: `seed-${i}`,
