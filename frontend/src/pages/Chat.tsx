@@ -81,7 +81,7 @@ export default function Chat() {
     ]);
 
     if (leftResult.status === 'fulfilled') {
-      setLeftMessages(prev => [...prev, { role: 'assistant', content: leftResult.value.response }]);
+      setLeftMessages(prev => [...prev, { role: 'assistant', content: leftResult.value.response ?? '' }]);
     } else {
       setLeftMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (leftResult.reason as Error).message }]);
     }
@@ -93,7 +93,7 @@ export default function Chat() {
         ...prev,
         {
           role: 'assistant',
-          content: r.response,
+          content: r.response ?? '',
           memoriesUsed: r.memories_used,
           contradictionDetected: r.contradiction_detected,
         },

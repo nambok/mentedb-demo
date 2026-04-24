@@ -76,7 +76,7 @@ export default function ScenarioPlayer({
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
           >
             {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            Send: "{step?.user.slice(0, 50)}{(step?.user.length ?? 0) > 50 ? '...' : ''}"
+            Send: "{(step?.user ?? '').slice(0, 50)}{(step?.user?.length ?? 0) > 50 ? '...' : ''}"
           </button>
         )}
       </div>

@@ -19,13 +19,14 @@ interface ChatPanelProps {
 }
 
 function TypingMessage({ content }: { content: string }) {
+  const text = content ?? '';
   const [displayed, setDisplayed] = useState(0);
 
   useEffect(() => {
     setDisplayed(0);
     const timer = setInterval(() => {
       setDisplayed(prev => {
-        if (prev >= content.length) {
+        if (prev >= text.length) {
           clearInterval(timer);
           return prev;
         }
@@ -33,12 +34,12 @@ function TypingMessage({ content }: { content: string }) {
       });
     }, 12);
     return () => clearInterval(timer);
-  }, [content]);
+  }, [text]);
 
   return (
     <span>
-      {content.slice(0, displayed)}
-      {displayed < content.length && <span className="typing-cursor" />}
+      {text.slice(0, displayed)}
+      {displayed < text.length && <span className="typing-cursor" />}
     </span>
   );
 }
@@ -184,7 +185,7 @@ function MessageBubble({
           {!isUser && isLatest ? (
             <TypingMessage content={message.content} />
           ) : (
-            <span className="whitespace-pre-wrap">{message.content}</span>
+            <span className="whitespace-pre-wrap">{message.content ?? ''}</span>
           )}
         </div>
       </div>
