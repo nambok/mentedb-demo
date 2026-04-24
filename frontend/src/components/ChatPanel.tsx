@@ -1,14 +1,15 @@
 import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronDown, ChevronUp, Zap, BookMarked } from 'lucide-react';
+import { ChevronDown, ChevronUp, Zap, BookMarked, RefreshCw, EyeOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'session-break';
   content: string;
   memoriesUsed?: Array<{ content: string; relevance: number; type: string }>;
   contradictionDetected?: { old: string; new: string } | null;
+  counterfactual?: string;
 }
 
 interface ChatPanelProps {
@@ -18,6 +19,7 @@ interface ChatPanelProps {
   isLoading: boolean;
   accentColor: 'zinc' | 'emerald';
   model?: string;
+  sessionNumber?: number;
 }
 
 function TypingMarkdown({ content }: { content: string }) {
@@ -95,18 +97,23 @@ export default function ChatPanel({
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <MessageBubble
-            key={i}
-            message={msg}
-            accentColor={accentColor}
-            isLatest={i === lastMsgIndex}
-          />
-        ))}
+        {messages.map((msg, i) => {
+          if (msg.role === 'session-break') {
+            return <SessionBreakDivider key={i} label={msg.content} />;
+          }
+          return (
+            <MessageBubble
+              key={i}
+              message={msg}
+              accentColor={accentColor}
+              isLatest={i === lastMsgIndex}
+            />
+          );
+        })}
 
         {isLoading && (
           <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs shrink-0">
+            <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-xs text-white shrink-0">
               AI
             </div>
             <div className="bg-zinc-800 rounded-lg px-4 py-2">
@@ -123,9 +130,62 @@ export default function ChatPanel({
   );
 }
 
+function SessionBreakDivider({ label: _label }: { label: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scaleX: 0.8 }}
+      animate={{ opacity: 1, scaleX: 1 }}
+      className="flex items-center gap-3 py-3"
+    >
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+        <RefreshCw size={12} className="text-emerald-400" />
+        <span className="text-xs font-medium text-emerald-300">✨ New Session — chat history cleared, memories persist</span>
+      </div>
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+    </motion.div>
+  );
+}
+
+function CounterfactualCard({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = (text ?? '').slice(0, 120);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3 }}
+      className="mt-2"
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer group"
+      >
+        <EyeOff size={12} />
+        <span className="font-medium">Without MenteDB</span>
+        <span className="text-zinc-600 group-hover:text-zinc-500">
+          {expanded ? '▾' : '▸'} {!expanded && `"${preview}${text.length > 120 ? '...' : ''}"`}
+        </span>
+      </button>
+      {expanded && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="mt-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-2.5 text-sm text-zinc-500 leading-relaxed overflow-hidden"
+        >
+          <div className="prose-chat opacity-60">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+          </div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 function MessageBubble({
   message,
-  accentColor,
+  accentColor: _accentColor,
   isLatest,
 }: {
   message: ChatMessage;
@@ -144,7 +204,7 @@ function MessageBubble({
     >
       <div
         className={`w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0 ${
-          isUser ? 'bg-blue-600 text-white' : accentColor === 'emerald' ? 'bg-emerald-600 text-white' : 'bg-zinc-700 text-zinc-300'
+          isUser ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'
         }`}
       >
         {isUser ? 'U' : 'AI'}
@@ -189,9 +249,7 @@ function MessageBubble({
           className={`rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
             isUser
               ? 'bg-blue-600 text-white'
-              : accentColor === 'emerald'
-              ? 'bg-zinc-800 border border-emerald-500/10 text-zinc-200'
-              : 'bg-zinc-800 text-zinc-300'
+              : 'bg-zinc-800 border border-emerald-500/10 text-zinc-200'
           }`}
         >
           {!isUser && isLatest ? (
@@ -204,6 +262,11 @@ function MessageBubble({
             </div>
           )}
         </div>
+
+        {/* Counterfactual comparison — only for assistant messages */}
+        {!isUser && message.counterfactual && (
+          <CounterfactualCard text={message.counterfactual} />
+        )}
       </div>
     </motion.div>
   );

@@ -2,31 +2,26 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Send } from 'lucide-react';
 import ChatPanel, { type ChatMessage } from '../components/ChatPanel';
 import MemoryFeed from '../components/MemoryFeed';
-import HintBubble from '../components/HintBubble';
 import ScenarioPlayer from '../components/ScenarioPlayer';
 import Header from '../components/Header';
 import { sendChat, resetSession, seedPersona, getMemories } from '../lib/api';
-import { scenarios, type Scenario } from '../data/scenarios';
-
-const FREE_MODE_HINTS: Record<number, string> = {
-  1: "💡 Try asking about your tech stack — the right panel knows your preferences",
-  3: "💡 Try contradicting something you said earlier",
-  5: "💡 Click Reset to clear history but keep memories",
-  7: "💡 Ask for a recommendation based on everything discussed",
-};
+import { personaScenarios } from '../data/scenarios';
 
 export default function Chat() {
   const [sessionId] = useState(() => crypto.randomUUID());
   const [mode, setMode] = useState<'free' | 'guided'>('guided');
-  const [selectedScenario, setSelectedScenario] = useState<Scenario>(scenarios[0]);
-  const [scenarioStep, setScenarioStep] = useState(0);
   const [selectedPersona, setSelectedPersona] = useState('developer');
+  const [scenarioStep, setScenarioStep] = useState(0);
 
-  const [leftMessages, setLeftMessages] = useState<ChatMessage[]>([]);
-  const [rightMessages, setRightMessages] = useState<ChatMessage[]>([]);
-  const [leftLoading, setLeftLoading] = useState(false);
-  const [rightLoading, setRightLoading] = useState(false);
+  // Single message list (includes session-break markers)
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
+  // Track which session we're in (1-based). Session breaks increment this.
+  const [sessionNumber, setSessionNumber] = useState(1);
+
+
+  // Cognitive feed state
   const [memoriesUsed, setMemoriesUsed] = useState<Array<{ content: string; relevance: number; type: string; is_new?: boolean; from_cache?: boolean; health?: number; scope?: string; tags?: string[] }>>([]);
   const [memoriesStored, setMemoriesStored] = useState<Array<{ content: string; type: string }>>([]);
   const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null);
@@ -38,12 +33,10 @@ export default function Chat() {
   const [modelName, setModelName] = useState<string>('Amazon Nova Lite');
 
   const [input, setInput] = useState('');
-  const [currentHint, setCurrentHint] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
-
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Init: seed persona on mount
+  // Seed persona on mount
   useEffect(() => {
     if (selectedPersona !== 'fresh') {
       seedPersona(sessionId, selectedPersona).catch(() => {});
@@ -60,74 +53,99 @@ export default function Chat() {
     }).catch(() => {});
   }, [turnCount, sessionId]);
 
+  // Get only messages from the current session (after the last session break)
+  const getCurrentSessionHistory = useCallback(() => {
+    const allMsgs = [...messages];
+    let lastBreakIdx = -1;
+    for (let i = allMsgs.length - 1; i >= 0; i--) {
+      if (allMsgs[i].role === 'session-break') {
+        lastBreakIdx = i;
+        break;
+      }
+    }
+    return allMsgs
+      .slice(lastBreakIdx + 1)
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+  }, [messages]);
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text.trim() };
-
-    setLeftMessages(prev => [...prev, userMsg]);
-    setRightMessages(prev => [...prev, userMsg]);
-    setLeftLoading(true);
-    setRightLoading(true);
+    setMessages(prev => [...prev, userMsg]);
+    setIsLoading(true);
     setInput('');
 
-    const leftHistory = [...leftMessages, userMsg].map(m => ({ role: m.role, content: m.content }));
-    const rightHistory = [...rightMessages, userMsg].map(m => ({ role: m.role, content: m.content }));
+    const history = [...getCurrentSessionHistory(), { role: 'user' as const, content: text.trim() }];
 
-    // Fire both requests in parallel
-    const [leftResult, rightResult] = await Promise.allSettled([
-      sendChat({ messages: leftHistory, session_id: sessionId, mode: 'without_memory' }),
-      sendChat({ messages: rightHistory, session_id: sessionId, mode: 'with_memory' }),
-    ]);
+    try {
+      // Fire main (with_memory) request + counterfactual (without_memory) in parallel
+      const [mainResult, counterfactualResult] = await Promise.allSettled([
+        sendChat({ messages: history, session_id: sessionId, mode: 'with_memory' }),
+        // Counterfactual: only the current message, no history, no memory
+        sendChat({ messages: [{ role: 'user', content: text.trim() }], session_id: sessionId, mode: 'without_memory' }),
+      ]);
 
-    if (leftResult.status === 'fulfilled') {
-      setLeftMessages(prev => [...prev, { role: 'assistant', content: leftResult.value.response ?? '' }]);
-    } else {
-      setLeftMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (leftResult.reason as Error).message }]);
-    }
-    setLeftLoading(false);
+      let assistantContent = '';
+      let counterfactual: string | undefined;
 
-    if (rightResult.status === 'fulfilled') {
-      const r = rightResult.value;
-      setRightMessages(prev => [
+      if (mainResult.status === 'fulfilled') {
+        const r = mainResult.value;
+        assistantContent = r.response ?? '';
+        setMemoriesUsed(r.memories_used || []);
+        setMemoriesStored(r.memories_stored || []);
+        setContradiction(r.contradiction_detected || null);
+        setPainWarnings(r.pain_warnings || []);
+        setProactiveRecalls(r.proactive_recalls || []);
+        setDetectedActions(r.detected_actions || []);
+        if (r.model) setModelName(r.model);
+      } else {
+        assistantContent = '❌ Error: ' + (mainResult.reason as Error).message;
+      }
+
+      if (counterfactualResult.status === 'fulfilled') {
+        counterfactual = counterfactualResult.value.response ?? '';
+      }
+
+      setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: r.response ?? '',
-          memoriesUsed: r.memories_used,
-          contradictionDetected: r.contradiction_detected,
+          content: assistantContent,
+          memoriesUsed: mainResult.status === 'fulfilled' ? mainResult.value.memories_used : undefined,
+          contradictionDetected: mainResult.status === 'fulfilled' ? mainResult.value.contradiction_detected : undefined,
+          counterfactual,
         },
       ]);
-      setMemoriesUsed(r.memories_used || []);
-      setMemoriesStored(r.memories_stored || []);
-      setContradiction(r.contradiction_detected || null);
-      setPainWarnings(r.pain_warnings || []);
-      setProactiveRecalls(r.proactive_recalls || []);
-      setDetectedActions(r.detected_actions || []);
-      if (r.model) setModelName(r.model);
-    } else {
-      setRightMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (rightResult.reason as Error).message }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (err as Error).message }]);
     }
-    setRightLoading(false);
 
+    setIsLoading(false);
     const newTurn = turnCount + 1;
     setTurnCount(newTurn);
 
-    // Show hints in free mode
-    if (mode === 'free' && FREE_MODE_HINTS[newTurn]) {
-      setCurrentHint(FREE_MODE_HINTS[newTurn]);
-    }
-
-    // Advance scenario step
     if (mode === 'guided') {
       setScenarioStep(prev => prev + 1);
     }
-  }, [leftMessages, rightMessages, sessionId, turnCount, mode]);
+  }, [getCurrentSessionHistory, sessionId, turnCount, mode]);
+
+  const handleSessionBreak = useCallback(() => {
+    const newSessionNum = sessionNumber + 1;
+    setSessionNumber(newSessionNum);
+    setMessages(prev => [
+      ...prev,
+      { role: 'session-break', content: `Session ${newSessionNum}` },
+    ]);
+    if (mode === 'guided') {
+      setScenarioStep(prev => prev + 1);
+    }
+  }, [sessionNumber, mode]);
 
   const handleReset = useCallback(async () => {
     await resetSession(sessionId).catch(() => {});
-    setLeftMessages([]);
-    setRightMessages([]);
+    setMessages([]);
     setMemoriesUsed([]);
     setMemoriesStored([]);
     setContradiction(null);
@@ -138,30 +156,15 @@ export default function Chat() {
     setAvgHealth(0);
     setTurnCount(0);
     setScenarioStep(0);
-    setCurrentHint(null);
+    setSessionNumber(1);
     if (selectedPersona !== 'fresh') {
       await seedPersona(sessionId, selectedPersona).catch(() => {});
     }
   }, [sessionId, selectedPersona]);
 
-  const handleClearChat = useCallback(() => {
-    // Clear messages but keep memories (for cross-session scenarios)
-    setLeftMessages([]);
-    setRightMessages([]);
-  }, []);
-
-  const handleScenarioChange = useCallback((s: Scenario | null) => {
-    if (s) {
-      setSelectedScenario(s);
-      setScenarioStep(0);
-      setMode('guided');
-    }
-  }, []);
-
   const handlePersonaChange = useCallback(async (id: string) => {
     setSelectedPersona(id);
-    setLeftMessages([]);
-    setRightMessages([]);
+    setMessages([]);
     setMemoriesUsed([]);
     setMemoriesStored([]);
     setContradiction(null);
@@ -170,7 +173,7 @@ export default function Chat() {
     setDetectedActions([]);
     setScenarioStep(0);
     setTurnCount(0);
-    // Reset and re-seed with new persona
+    setSessionNumber(1);
     await resetSession(sessionId).catch(() => {});
     if (id !== 'fresh') {
       await seedPersona(sessionId, id).catch(() => {});
@@ -182,7 +185,7 @@ export default function Chat() {
     sendMessage(input);
   };
 
-  const isLoading = leftLoading || rightLoading;
+  const scenario = personaScenarios[selectedPersona] ?? personaScenarios.developer;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -190,8 +193,6 @@ export default function Chat() {
         sessionId={sessionId}
         selectedPersona={selectedPersona}
         onSelectPersona={handlePersonaChange}
-        selectedScenario={selectedScenario}
-        onSelectScenario={handleScenarioChange}
         mode={mode}
         onToggleMode={() => setMode(m => (m === 'free' ? 'guided' : 'free'))}
         onReset={handleReset}
@@ -199,28 +200,17 @@ export default function Chat() {
 
       {/* Main content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
-        {/* Chat panels */}
-        <div className="flex-1 min-h-0 flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 min-h-0">
-            <ChatPanel
-              title="Without Memory"
-              subtitle="Standard AI — no persistence"
-              messages={leftMessages}
-              isLoading={leftLoading}
-              accentColor="zinc"
-              model={modelName}
-            />
-          </div>
-          <div className="flex-1 min-h-0">
-            <ChatPanel
-              title="With MenteDB"
-              subtitle="AI + persistent memory"
-              messages={rightMessages}
-              isLoading={rightLoading}
-              accentColor="emerald"
-              model={modelName}
-            />
-          </div>
+        {/* Chat panel — single */}
+        <div className="flex-1 min-h-0">
+          <ChatPanel
+            title="Chat with MenteDB"
+            subtitle="AI with persistent memory across sessions"
+            messages={messages}
+            isLoading={isLoading}
+            accentColor="emerald"
+            model={modelName}
+            sessionNumber={sessionNumber}
+          />
         </div>
 
         {/* Memory feed sidebar */}
@@ -240,33 +230,23 @@ export default function Chat() {
 
       {/* Bottom controls */}
       <div className="shrink-0 p-3 space-y-3 border-t border-zinc-800">
-        {/* Hint / Scenario Player */}
-        {mode === 'guided' && selectedScenario && (
+        {mode === 'guided' && (
           <ScenarioPlayer
-            scenario={selectedScenario}
+            scenario={scenario}
             currentStep={scenarioStep}
             onSendStep={sendMessage}
-            onClearChat={handleClearChat}
+            onSessionBreak={handleSessionBreak}
             isLoading={isLoading}
           />
         )}
 
-        {mode === 'free' && currentHint && (
-          <HintBubble
-            text={currentHint}
-            visible={!!currentHint}
-            onDismiss={() => setCurrentHint(null)}
-          />
-        )}
-
-        {/* Input field */}
         <form onSubmit={handleSubmit} className="flex gap-2">
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={mode === 'guided' ? "Use the scenario player above, or type your own message..." : "Type a message to both AIs..."}
+            placeholder={mode === 'guided' ? "Use the scenario player above, or type your own message..." : "Type a message..."}
             disabled={isLoading}
             className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 disabled:opacity-50"
           />

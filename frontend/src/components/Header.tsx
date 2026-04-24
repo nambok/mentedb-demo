@@ -8,14 +8,11 @@ function GithubIcon({ size = 14 }: { size?: number }) {
   );
 }
 import PersonaSelector from './PersonaSelector';
-import { scenarios, type Scenario } from '../data/scenarios';
 
 interface HeaderProps {
   sessionId: string;
   selectedPersona: string;
   onSelectPersona: (id: string) => void;
-  selectedScenario: Scenario | null;
-  onSelectScenario: (s: Scenario | null) => void;
   mode: 'free' | 'guided';
   onToggleMode: () => void;
   onReset: () => void;
@@ -25,8 +22,6 @@ export default function Header({
   sessionId,
   selectedPersona,
   onSelectPersona,
-  selectedScenario,
-  onSelectScenario,
   mode,
   onToggleMode,
   onReset,
@@ -43,23 +38,6 @@ export default function Header({
           selected={selectedPersona}
           onSelect={onSelectPersona}
         />
-
-        <div className="hidden md:block relative">
-          <select
-            value={selectedScenario?.id ?? ''}
-            onChange={e => {
-              const s = scenarios.find(sc => sc.id === e.target.value) ?? null;
-              onSelectScenario(s);
-            }}
-            className="appearance-none px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-300 pr-8 cursor-pointer"
-          >
-            {scenarios.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -84,13 +62,13 @@ export default function Header({
         </button>
 
         <a
-          href="https://github.com/nambok/mentedb-demo"
+          href="https://github.com/nambok/mentedb"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <GithubIcon size={14} />
-          <span className="hidden sm:inline">Source</span>
+          <span className="hidden sm:inline">GitHub</span>
         </a>
 
         <a

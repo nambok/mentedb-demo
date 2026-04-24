@@ -1,109 +1,162 @@
-import type { LucideIcon } from 'lucide-react';
-import { Zap, ShieldAlert, RefreshCw, Puzzle, Link2, ClipboardList, Brain } from 'lucide-react';
-
 export interface ScenarioStep {
   user: string;
-  hint?: string;
+  hint: string;
+  sessionBreak?: boolean; // If true, this step triggers a "New Session" instead of sending a message
 }
 
 export interface Scenario {
   id: string;
-  title: string;
-  icon: LucideIcon;
   description: string;
-  feature: string;
   steps: ScenarioStep[];
 }
 
-export const scenarios: Scenario[] = [
-  {
-    id: 'full-demo',
-    title: 'The Full Experience',
-    icon: Brain,
-    description: 'See every MenteDB feature in one conversation',
-    feature: 'All Features Combined',
+// Each persona has its own scenario that tells a multi-session narrative
+export const personaScenarios: Record<string, Scenario> = {
+  developer: {
+    id: 'developer',
+    description: 'Build context about your project, then see MenteDB remember it all in a new session',
     steps: [
-      { user: "I'm building a SaaS app called TaskPilot using Next.js and Supabase", hint: "🧠 MenteDB stores project context — watch the memory panel light up" },
-      { user: "I prefer Tailwind CSS and always use TypeScript strict mode", hint: "📌 Preferences stored as semantic memories" },
-      { user: "Last time I used Firebase it was a nightmare — auth kept breaking in production", hint: "🔴 Pain signal recorded — MenteDB will warn about Firebase in the future" },
-      { user: "Actually I switched from Supabase to PlanetScale yesterday", hint: "⚡ Contradiction detected! Supabase → PlanetScale" },
-      { user: "My tech lead Sarah wants us to ship the MVP by end of Q3", hint: "📋 Fact extraction: person (Sarah), deadline (Q3), goal (MVP)" },
-      { user: "Based on everything you know about me, suggest a deployment strategy", hint: "🧩 Context assembly: combines project, preferences, pain signals, and deadline into tailored advice" },
-      { user: "What database am I using and why did I switch?", hint: "🔗 Entity resolution + contradiction memory — knows PlanetScale, remembers the switch from Supabase" },
+      {
+        user: "I'm building a SaaS app called TaskPilot using Next.js and Supabase",
+        hint: "🧠 MenteDB extracts project name, framework, and database — stored as semantic memories",
+      },
+      {
+        user: "I prefer Tailwind CSS and always use TypeScript strict mode",
+        hint: "📌 Preferences stored — MenteDB will use these to personalize future responses",
+      },
+      {
+        user: "Last time I used Firebase it was a nightmare — auth kept breaking in production",
+        hint: "🔴 Pain signal recorded! MenteDB will proactively warn you if Firebase comes up again",
+      },
+      {
+        user: '',
+        hint: "✨ Starting a brand new conversation — chat history is wiped. But MenteDB remembers everything.",
+        sessionBreak: true,
+      },
+      {
+        user: "Help me set up authentication for my project",
+        hint: "🔮 Watch: MenteDB recalls your project (TaskPilot), stack (Next.js), and Firebase pain — without you repeating anything",
+      },
+      {
+        user: "Actually I switched from Supabase to PlanetScale yesterday",
+        hint: "⚡ Contradiction detected! MenteDB catches the Supabase → PlanetScale change and updates its understanding",
+      },
+      {
+        user: "Based on everything you know about me, suggest a deployment strategy",
+        hint: "🧩 Full context assembly: project + stack + preferences + pain signals + recent changes → tailored advice",
+      },
+      {
+        user: "What do you know about me and my project?",
+        hint: "🔗 Entity resolution: MenteDB synthesizes everything — project, tools, preferences, changes, pain points",
+      },
     ],
   },
-  {
-    id: 'contradiction',
-    title: 'The Contradiction Catcher',
-    icon: Zap,
-    description: 'Watch MenteDB detect when you change your mind',
-    feature: 'Contradiction Detection',
+
+  student: {
+    id: 'student',
+    description: 'Share your research context, then see MenteDB guide you in a new session',
     steps: [
-      { user: "I'm using PostgreSQL for my database", hint: "Both AIs respond similarly — no difference yet" },
-      { user: "Actually I switched to MongoDB last week", hint: "⚡ MenteDB detects the contradiction: PostgreSQL → MongoDB" },
-      { user: "What database am I using?", hint: "Without memory: no idea. With MenteDB: knows you switched to MongoDB" },
+      {
+        user: "I'm working on my thesis about transformer attention mechanisms using PyTorch",
+        hint: "🧠 MenteDB stores your research topic, framework, and academic context",
+      },
+      {
+        user: "I train my models on a university GPU cluster with SLURM",
+        hint: "📌 Infrastructure preferences stored — MenteDB learns your setup",
+      },
+      {
+        user: "Google Colab kept disconnecting during long training runs — lost 8 hours of work",
+        hint: "🔴 Pain signal: Colab disconnections. MenteDB will warn you if Colab comes up again",
+      },
+      {
+        user: '',
+        hint: "✨ New session — imagine it's the next day. Chat cleared, but MenteDB remembers your research context.",
+        sessionBreak: true,
+      },
+      {
+        user: "I need to run a 24-hour training job — what platform should I use?",
+        hint: "🔮 Watch: MenteDB recalls your GPU cluster setup AND warns against Colab due to your past pain",
+      },
+      {
+        user: "Actually I switched from PyTorch to JAX for better TPU support",
+        hint: "⚡ Contradiction: PyTorch → JAX! MenteDB catches the framework change",
+      },
+      {
+        user: "Help me optimize my attention mechanism implementation",
+        hint: "🧩 Context assembly: thesis topic + new framework (JAX) + infrastructure → personalized guidance",
+      },
     ],
   },
-  {
-    id: 'pain',
-    title: 'The Pain Learner',
-    icon: ShieldAlert,
-    description: 'MenteDB remembers bad experiences and avoids them',
-    feature: 'Pain Signals',
+
+  pm: {
+    id: 'pm',
+    description: 'Set up your product context, then watch MenteDB assist in sprint planning',
     steps: [
-      { user: "Last time I used Redis for session storage it was terrible — constant connection drops and data loss", hint: "MenteDB records this as a pain signal 🔴" },
-      { user: "What should I use for session management in my Express app?", hint: "Without memory: might recommend Redis! With MenteDB: avoids Redis, suggests alternatives" },
-      { user: "What about caching? Any recommendations?", hint: "MenteDB remembers the Redis pain even in different contexts" },
+      {
+        user: "I manage a B2B HR analytics platform targeting enterprise companies with 500+ employees",
+        hint: "🧠 MenteDB stores product, market segment, and company size as semantic memories",
+      },
+      {
+        user: "We use 2-week sprints with Jira and we're planning to add an AI-powered insights feature",
+        hint: "📌 Process and roadmap stored — MenteDB learns your methodology",
+      },
+      {
+        user: "We tried Mixpanel for analytics and the pricing model was a nightmare — way too expensive at scale",
+        hint: "🔴 Pain signal: Mixpanel pricing. MenteDB will flag this if similar tools come up",
+      },
+      {
+        user: '',
+        hint: "✨ New session — next week's sprint planning. Chat history is gone, but MenteDB remembers your product context.",
+        sessionBreak: true,
+      },
+      {
+        user: "Help me prioritize features for the next sprint",
+        hint: "🔮 MenteDB recalls your product, target market, methodology, and planned AI feature — without re-explaining",
+      },
+      {
+        user: "Actually we're pivoting to target startups instead of enterprises",
+        hint: "⚡ Contradiction: enterprise → startups! MenteDB detects the market shift and updates its understanding",
+      },
+      {
+        user: "We need an analytics tool for tracking feature adoption — what do you recommend?",
+        hint: "🧩 Context assembly: knows your Mixpanel pain + startup pivot → avoids expensive tools, suggests startup-friendly options",
+      },
     ],
   },
-  {
-    id: 'cross-session',
-    title: 'Cross-Session Memory',
-    icon: RefreshCw,
-    description: 'The killer feature — memory survives conversation resets',
-    feature: 'Persistent Memory',
+
+  fresh: {
+    id: 'fresh',
+    description: 'Start from scratch — build memories from nothing and see them persist',
     steps: [
-      { user: "I'm building a marketplace called ShopFlow", hint: "MenteDB stores this as a project memory" },
-      { user: "It uses Next.js, Stripe, and Prisma with PostgreSQL", hint: "Building up project context..." },
-      { user: "My deadline is end of Q2", hint: "Three facts stored. Now click 'Clear Chat History' ↓" },
-      { user: "What am I working on?", hint: "🔄 Chat was cleared but MenteDB still remembers everything!" },
+      {
+        user: "I'm building a food delivery app called BiteBuddy using React Native and Firebase",
+        hint: "🧠 First memory! MenteDB stores your project, stack, and backend — starting from zero",
+      },
+      {
+        user: "I prefer dark mode UIs and minimal dependencies in my projects",
+        hint: "📌 Preferences stored — MenteDB is learning about you in real-time",
+      },
+      {
+        user: "AWS Lambda cold starts were terrible last time — 3 second delays on every request",
+        hint: "🔴 Pain signal stored: Lambda cold starts. Watch what happens in the next session...",
+      },
+      {
+        user: '',
+        hint: "✨ New session — all chat history wiped. Can the AI still help you without context? MenteDB can.",
+        sessionBreak: true,
+      },
+      {
+        user: "I need to deploy my app — what hosting should I use?",
+        hint: "🔮 MenteDB recalls your React Native project AND warns about Lambda cold starts — even in a new session",
+      },
+      {
+        user: "Actually we rebranded from BiteBuddy to FeastFleet",
+        hint: "⚡ Entity update: MenteDB links BiteBuddy → FeastFleet and updates the project name",
+      },
+      {
+        user: "Summarize everything you know about me and my project",
+        hint: "🔗 Full recall: project, preferences, pain points, name change — all from memory, nothing from chat history",
+      },
     ],
   },
-  {
-    id: 'context',
-    title: 'The Context Assembler',
-    icon: Puzzle,
-    description: 'Scattered preferences become personalized recommendations',
-    feature: 'Context Assembly',
-    steps: [
-      { user: "I prefer functional programming patterns", hint: "Preference #1 stored" },
-      { user: "I always use ESLint with strict rules", hint: "Preference #2 stored" },
-      { user: "I hate ORMs — I write raw SQL", hint: "Preference #3 + pain signal stored" },
-      { user: "Set up a new TypeScript project based on everything you know about me", hint: "🧩 MenteDB assembles all preferences into a tailored setup" },
-    ],
-  },
-  {
-    id: 'entity',
-    title: 'The Entity Resolver',
-    icon: Link2,
-    description: 'MenteDB connects the dots between different mentions',
-    feature: 'Entity Resolution',
-    steps: [
-      { user: "I'm working with React on the frontend of my app", hint: "MenteDB registers 'React' as an entity" },
-      { user: "The UI framework we picked has great component composition", hint: "🔗 MenteDB resolves 'UI framework' = React" },
-      { user: "How should I structure my components for the project?", hint: "MenteDB knows exactly which framework and project you mean" },
-    ],
-  },
-  {
-    id: 'meeting',
-    title: 'The Meeting Recap',
-    icon: ClipboardList,
-    description: 'Extract and recall structured facts across sessions',
-    feature: 'Fact Extraction',
-    steps: [
-      { user: "In today's standup: the auth service is blocked on the OAuth provider. Sarah is handling payment integration. We pushed launch from March to April. CEO wants a demo by Friday.", hint: "MenteDB extracts 4 distinct facts from this message" },
-      { user: "What are the current blockers?", hint: "Both know (it's in chat history). But watch what happens next..." },
-      { user: "Summarize what we discussed in the last standup", hint: "📋 Without memory: blank. With MenteDB: full structured recall" },
-    ],
-  },
-];
+};
