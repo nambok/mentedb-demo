@@ -36,9 +36,8 @@ export class DemoStack extends cdk.Stack {
     const certificate = acm.Certificate.fromCertificateArn(
       this,
       "WildcardCert",
-      // Wildcard cert for *.mentedb.com — created in dns-stack
-      cdk.Fn.importValue("mentedb-wildcard-cert-arn") ||
-        "arn:aws:acm:us-east-1:ACCOUNT:certificate/PLACEHOLDER"
+      // Wildcard cert for *.mentedb.com — created in dns-stack (prod)
+      cdk.Fn.importValue("mentedb-dns-prod:ExportsOutputRefWildcardCert4A8FDF87CF4600B1")
     );
 
     // --- Secrets Manager ---
