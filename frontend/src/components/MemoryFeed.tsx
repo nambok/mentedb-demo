@@ -10,6 +10,7 @@ interface MemoryFeedProps {
   detectedActions: Array<{ type: string; detail: string }>;
   totalMemories: number;
   avgHealth: number;
+  onViewMemories?: () => void;
 }
 
 export default function MemoryFeed({
@@ -21,6 +22,7 @@ export default function MemoryFeed({
   detectedActions,
   totalMemories,
   avgHealth,
+  onViewMemories,
 }: MemoryFeedProps) {
   const hasActivity = memoriesUsed.length > 0 || memoriesStored.length > 0 || contradiction || painWarnings.length > 0 || proactiveRecalls.length > 0 || detectedActions.length > 0;
 
@@ -206,10 +208,13 @@ export default function MemoryFeed({
 
       <div className="px-4 py-3 border-t border-zinc-800 bg-zinc-800/30 shrink-0">
         <div className="flex items-center justify-between text-xs text-zinc-500">
-          <div className="flex items-center gap-1.5">
+          <button
+            onClick={onViewMemories}
+            className="flex items-center gap-1.5 hover:text-emerald-400 transition-colors cursor-pointer"
+          >
             <BarChart3 size={12} />
-            <span>{totalMemories} memories</span>
-          </div>
+            <span className="underline underline-offset-2">{totalMemories} memories</span>
+          </button>
           <span>{avgHealth > 0 ? `${Math.round(avgHealth * 100)}% health` : '—'}</span>
         </div>
       </div>

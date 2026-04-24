@@ -275,6 +275,7 @@ export default function Chat() {
             detectedActions={detectedActions}
             totalMemories={totalMemories}
             avgHealth={avgHealth}
+            onViewMemories={() => setDrawerOpen(true)}
           />
         </div>
       </div>
