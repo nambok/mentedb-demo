@@ -80,3 +80,10 @@ body {
 .prose-chat table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
 .prose-chat th, .prose-chat td { border: 1px solid #3f3f46; padding: 0.35em 0.5em; font-size: 0.85em; }
 .prose-chat th { background: #27272a; color: #f4f4f5; font-weight: 600; }
+
+/* Dimmed variant for "without memory" side */
+.prose-chat-dim { color: #71717a; }
+.prose-chat-dim strong { color: #a1a1aa; }
+.prose-chat-dim code { color: #a1a1aa; background: #1f1f23; }
+.prose-chat-dim pre { border-color: #2a2a30; }
+.prose-chat-dim a { color: #71717a; }

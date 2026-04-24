@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronDown, ChevronUp, Zap, BookMarked, RefreshCw, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, Zap, BookMarked, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -63,7 +63,6 @@ export default function ChatPanel({
   subtitle,
   messages,
   isLoading,
-  accentColor,
   model,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -73,13 +72,9 @@ export default function ChatPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const borderClass = accentColor === 'emerald' ? 'border-emerald-500/30' : 'border-zinc-700';
-  const headerBg = accentColor === 'emerald' ? 'bg-emerald-500/5' : 'bg-zinc-800/50';
-  const glowClass = accentColor === 'emerald' ? 'shadow-[0_0_30px_-10px_rgba(52,211,153,0.15)]' : '';
-
   return (
-    <div className={`flex flex-col h-full rounded-xl border ${borderClass} ${glowClass} bg-zinc-900/80 overflow-hidden`}>
-      <div className={`px-4 py-3 border-b ${borderClass} ${headerBg} shrink-0`}>
+    <div className="flex flex-col h-full rounded-xl border border-emerald-500/30 shadow-[0_0_30px_-10px_rgba(52,211,153,0.15)] bg-zinc-900/80 overflow-hidden">
+      <div className="px-4 py-3 border-b border-emerald-500/30 bg-emerald-500/5 shrink-0">
         <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
         <p className="text-xs text-zinc-500">{subtitle}</p>
         {model && (
@@ -99,28 +94,34 @@ export default function ChatPanel({
 
         {messages.map((msg, i) => {
           if (msg.role === 'session-break') {
-            return <SessionBreakDivider key={i} label={msg.content} />;
+            return <SessionBreakDivider key={i} />;
+          }
+          if (msg.role === 'user') {
+            return <UserBubble key={i} content={msg.content} />;
           }
           return (
-            <MessageBubble
+            <ComparisonCard
               key={i}
               message={msg}
-              accentColor={accentColor}
               isLatest={i === lastMsgIndex}
             />
           );
         })}
 
         {isLoading && (
-          <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-xs text-white shrink-0">
-              AI
-            </div>
-            <div className="bg-zinc-800 rounded-lg px-4 py-2">
+          <div className="flex gap-3">
+            <div className="flex-1 rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-3">
               <div className="flex gap-1">
-                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-2 h-2 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-zinc-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+            <div className="flex-1 rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-4 py-3">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>
@@ -130,97 +131,70 @@ export default function ChatPanel({
   );
 }
 
-function SessionBreakDivider({ label: _label }: { label: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scaleX: 0.8 }}
-      animate={{ opacity: 1, scaleX: 1 }}
-      className="flex items-center gap-3 py-3"
-    >
-      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
-        <RefreshCw size={12} className="text-emerald-400" />
-        <span className="text-xs font-medium text-emerald-300">✨ New Session — chat history cleared, memories persist</span>
-      </div>
-      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
-    </motion.div>
-  );
-}
-
-function CounterfactualCard({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const preview = (text ?? '').slice(0, 120);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.3 }}
-      className="mt-2"
-    >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer group"
-      >
-        <EyeOff size={12} />
-        <span className="font-medium">Without MenteDB</span>
-        <span className="text-zinc-600 group-hover:text-zinc-500">
-          {expanded ? '▾' : '▸'} {!expanded && `"${preview}${text.length > 120 ? '...' : ''}"`}
-        </span>
-      </button>
-      {expanded && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          className="mt-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-4 py-2.5 text-sm text-zinc-500 leading-relaxed overflow-hidden"
-        >
-          <div className="prose-chat opacity-60">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-}
-
-function MessageBubble({
-  message,
-  accentColor: _accentColor,
-  isLatest,
-}: {
-  message: ChatMessage;
-  accentColor: 'zinc' | 'emerald';
-  isLatest: boolean;
-}) {
-  const [memoriesExpanded, setMemoriesExpanded] = useState(false);
-  const isUser = message.role === 'user';
-
+function UserBubble({ content }: { content: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
+      className="flex justify-end"
     >
-      <div
-        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0 ${
-          isUser ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'
-        }`}
-      >
-        {isUser ? 'U' : 'AI'}
+      <div className="flex items-start gap-3 flex-row-reverse max-w-[80%]">
+        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs text-white shrink-0">U</div>
+        <div className="rounded-lg px-4 py-2.5 text-sm leading-relaxed bg-blue-600 text-white">
+          <span className="whitespace-pre-wrap">{content}</span>
+        </div>
       </div>
+    </motion.div>
+  );
+}
 
-      <div className={`max-w-[85%] space-y-2`}>
-        {message.contradictionDetected && (
-          <div className="flex items-center gap-2 text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 text-amber-400">
-            <Zap size={14} />
-            <span>
-              Contradiction: "{message.contradictionDetected.old}" → "{message.contradictionDetected.new}"
-            </span>
-          </div>
-        )}
+function SessionBreakDivider() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scaleX: 0.8 }}
+      animate={{ opacity: 1, scaleX: 1 }}
+      className="flex items-center gap-3 py-4"
+    >
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/30">
+        <RefreshCw size={13} className="text-amber-400" />
+        <span className="text-xs font-semibold text-amber-300">New Session — chat history cleared, memories persist</span>
+      </div>
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
+    </motion.div>
+  );
+}
 
-        {message.memoriesUsed && message.memoriesUsed.length > 0 && (
+function ComparisonCard({
+  message,
+  isLatest,
+}: {
+  message: ChatMessage;
+  isLatest: boolean;
+}) {
+  const [memoriesExpanded, setMemoriesExpanded] = useState(false);
+  const withMemory = message.content ?? '';
+  const withoutMemory = message.counterfactual ?? '';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="space-y-2"
+    >
+      {/* Contradiction badge */}
+      {message.contradictionDetected && (
+        <div className="flex items-center gap-2 text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 text-amber-400">
+          <Zap size={14} />
+          <span>Contradiction: "{message.contradictionDetected.old}" → "{message.contradictionDetected.new}"</span>
+        </div>
+      )}
+
+      {/* Memories recalled badge */}
+      {message.memoriesUsed && message.memoriesUsed.length > 0 && (
+        <>
           <button
             onClick={() => setMemoriesExpanded(!memoriesExpanded)}
             className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
@@ -229,44 +203,53 @@ function MessageBubble({
             <span>{message.memoriesUsed.length} memories recalled</span>
             {memoriesExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
-        )}
-
-        {memoriesExpanded && message.memoriesUsed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            className="space-y-1 overflow-hidden"
-          >
-            {message.memoriesUsed.map((m, j) => (
-              <div key={j} className="text-xs bg-emerald-500/5 border border-emerald-500/20 rounded px-2 py-1 text-emerald-300/80">
-                📌 {(m.content ?? '').slice(0, 80)}... <span className="text-emerald-500/60">[{(m.relevance ?? 0).toFixed(2)}]</span>
-              </div>
-            ))}
-          </motion.div>
-        )}
-
-        <div
-          className={`rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
-            isUser
-              ? 'bg-blue-600 text-white'
-              : 'bg-zinc-800 border border-emerald-500/10 text-zinc-200'
-          }`}
-        >
-          {!isUser && isLatest ? (
-            <TypingMarkdown content={message.content ?? ''} />
-          ) : isUser ? (
-            <span className="whitespace-pre-wrap">{message.content ?? ''}</span>
-          ) : (
-            <div className="prose-chat">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content ?? ''}</ReactMarkdown>
-            </div>
+          {memoriesExpanded && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="space-y-1 overflow-hidden">
+              {message.memoriesUsed.map((m, j) => (
+                <div key={j} className="text-xs bg-emerald-500/5 border border-emerald-500/20 rounded px-2 py-1 text-emerald-300/80">
+                  📌 {(m.content ?? '').slice(0, 80)}… <span className="text-emerald-500/60">[{(m.relevance ?? 0).toFixed(2)}]</span>
+                </div>
+              ))}
+            </motion.div>
           )}
+        </>
+      )}
+
+      {/* Side-by-side response comparison */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Without MenteDB */}
+        <div className="rounded-lg border border-zinc-700/60 bg-zinc-800/60 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-zinc-700/40 bg-zinc-800/80 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-zinc-500" />
+            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Without Memory</span>
+          </div>
+          <div className="px-3 py-2.5 text-sm leading-relaxed text-zinc-400">
+            {withoutMemory ? (
+              <div className="prose-chat prose-chat-dim">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{withoutMemory}</ReactMarkdown>
+              </div>
+            ) : (
+              <span className="text-zinc-600 italic text-xs">Loading...</span>
+            )}
+          </div>
         </div>
 
-        {/* Counterfactual comparison — only for assistant messages */}
-        {!isUser && message.counterfactual && (
-          <CounterfactualCard text={message.counterfactual} />
-        )}
+        {/* With MenteDB */}
+        <div className="rounded-lg border border-emerald-500/30 bg-zinc-800/80 overflow-hidden shadow-[0_0_15px_-5px_rgba(52,211,153,0.1)]">
+          <div className="px-3 py-1.5 border-b border-emerald-500/20 bg-emerald-500/5 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">With MenteDB</span>
+          </div>
+          <div className="px-3 py-2.5 text-sm leading-relaxed text-zinc-200">
+            {isLatest ? (
+              <TypingMarkdown content={withMemory} />
+            ) : (
+              <div className="prose-chat">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{withMemory}</ReactMarkdown>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </motion.div>
   );

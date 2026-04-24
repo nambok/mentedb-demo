@@ -203,8 +203,8 @@ export default function Chat() {
         {/* Chat panel — single */}
         <div className="flex-1 min-h-0">
           <ChatPanel
-            title="Chat with MenteDB"
-            subtitle="AI with persistent memory across sessions"
+            title="MenteDB Demo"
+            subtitle="Same message, two AI responses — see the difference memory makes"
             messages={messages}
             isLoading={isLoading}
             accentColor="emerald"
