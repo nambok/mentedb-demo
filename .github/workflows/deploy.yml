@@ -26,6 +26,9 @@ jobs:
           aws-region: us-east-1
 
       - name: Deploy CDK (infra + Lambda)
+        env:
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          WILDCARD_CERT_ARN: ${{ vars.WILDCARD_CERT_ARN }}
         run: |
           cd infra
           npm ci

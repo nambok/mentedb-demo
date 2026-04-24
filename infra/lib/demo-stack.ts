@@ -24,20 +24,27 @@ export class DemoStack extends cdk.Stack {
     const prefix = `mentedb-${props.stage}`;
 
     // --- DNS (import existing hosted zone + wildcard cert) ---
+    const hostedZoneId = process.env.HOSTED_ZONE_ID;
+    if (!hostedZoneId) {
+      throw new Error("HOSTED_ZONE_ID environment variable is required");
+    }
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
       this,
       "HostedZone",
       {
-        hostedZoneId: "Z054671213X6W9Q9HRVAM",
+        hostedZoneId,
         zoneName: "mentedb.com",
       }
     );
 
+    const certArn = process.env.WILDCARD_CERT_ARN;
+    if (!certArn) {
+      throw new Error("WILDCARD_CERT_ARN environment variable is required");
+    }
     const certificate = acm.Certificate.fromCertificateArn(
       this,
       "WildcardCert",
-      // Wildcard cert for *.mentedb.com — created in dns-stack (prod)
-      cdk.Fn.importValue("mentedb-dns-prod:ExportsOutputRefWildcardCert4A8FDF87CF4600B1")
+      certArn
     );
 
     // --- Secrets Manager ---
