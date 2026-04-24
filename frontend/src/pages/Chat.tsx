@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Send } from 'lucide-react';
 import ChatPanel, { type ChatMessage } from '../components/ChatPanel';
 import MemoryFeed from '../components/MemoryFeed';
+import MemoryDrawer from '../components/MemoryDrawer';
 import ScenarioPlayer from '../components/ScenarioPlayer';
 import Header from '../components/Header';
-import { sendChat, resetSession, seedPersona, getMemories } from '../lib/api';
+import { sendChat, resetSession, seedPersona, getMemories, type Memory } from '../lib/api';
 import { personaScenarios } from '../data/scenarios';
 
 export default function Chat() {
@@ -36,11 +37,23 @@ export default function Chat() {
   const [turnCount, setTurnCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Seed persona on mount
+  // Seeded memories for the memory bank drawer
+  const [seededMemories, setSeededMemories] = useState<Memory[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Seed persona on mount and fetch seeded memories
   useEffect(() => {
-    if (selectedPersona !== 'fresh') {
-      seedPersona(sessionId, selectedPersona).catch(() => {});
-    }
+    (async () => {
+      if (selectedPersona !== 'fresh') {
+        await seedPersona(sessionId, selectedPersona).catch(() => {});
+      }
+      const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
+      setSeededMemories(mems);
+      setTotalMemories(mems.length);
+      if (mems.length > 0) {
+        setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update memory stats after each turn
@@ -157,8 +170,15 @@ export default function Chat() {
     setTurnCount(0);
     setScenarioStep(0);
     setSessionNumber(1);
+    setSeededMemories([]);
     if (selectedPersona !== 'fresh') {
       await seedPersona(sessionId, selectedPersona).catch(() => {});
+    }
+    const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
+    setSeededMemories(mems);
+    setTotalMemories(mems.length);
+    if (mems.length > 0) {
+      setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
     }
   }, [sessionId, selectedPersona]);
 
@@ -174,9 +194,16 @@ export default function Chat() {
     setScenarioStep(0);
     setTurnCount(0);
     setSessionNumber(1);
+    setSeededMemories([]);
     await resetSession(sessionId).catch(() => {});
     if (id !== 'fresh') {
       await seedPersona(sessionId, id).catch(() => {});
+    }
+    const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
+    setSeededMemories(mems);
+    setTotalMemories(mems.length);
+    if (mems.length > 0) {
+      setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
     }
   }, [sessionId]);
 
@@ -186,6 +213,14 @@ export default function Chat() {
   };
 
   const scenario = personaScenarios[selectedPersona] ?? personaScenarios.developer;
+
+  const personaLabels: Record<string, string> = {
+    developer: 'Software Developer',
+    student: 'CS Student',
+    pm: 'Product Manager',
+    fresh: 'Fresh Start',
+  };
+  const personaLabel = personaLabels[selectedPersona] ?? selectedPersona;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -197,6 +232,22 @@ export default function Chat() {
         onToggleMode={() => setMode(m => (m === 'free' ? 'guided' : 'free'))}
         onReset={handleReset}
       />
+
+      {/* Seeded memory banner */}
+      {seededMemories.length > 0 && (
+        <div className="shrink-0 mx-3 mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
+          <span className="text-emerald-400 text-xs">🧠</span>
+          <span className="text-xs text-zinc-300">
+            <span className="font-medium text-emerald-400">{seededMemories.length} memories</span> pre-loaded for the <span className="font-medium text-emerald-300">{personaLabel}</span> persona
+          </span>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="ml-auto text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer underline underline-offset-2"
+          >
+            View Memory Bank →
+          </button>
+        </div>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
@@ -260,6 +311,13 @@ export default function Chat() {
           </button>
         </form>
       </div>
+
+      <MemoryDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        memories={seededMemories}
+        personaLabel={personaLabel}
+      />
     </div>
   );
 }
