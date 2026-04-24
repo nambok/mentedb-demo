@@ -249,7 +249,7 @@ async function mentedbRestGet(
 // Bedrock (Claude) helper
 // ---------------------------------------------------------------------------
 
-const BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0";
+const BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 async function callBedrock(
   systemPrompt: string,
@@ -390,7 +390,7 @@ async function handleChat(
 
   return respond(200, {
     response: responseText,
-    model: BEDROCK_MODEL_ID,
+    model: "Claude Haiku 4.5",
     memories_used: memoriesUsed.map((m) => ({
       content: m.content,
       relevance: m.relevance_score ?? null,

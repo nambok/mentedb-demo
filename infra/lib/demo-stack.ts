@@ -99,13 +99,13 @@ export class DemoStack extends cdk.Stack {
     apiSecrets.grantRead(demoFn);
     rateLimitTable.grantReadWriteData(demoFn);
 
-    // Grant Bedrock invoke permission (Claude Sonnet 4 via cross-region inference)
+    // Grant Bedrock invoke permission (Claude Haiku 4.5 via cross-region inference)
     demoFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["bedrock:InvokeModel"],
         resources: [
-          `arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0`,
-          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
         ],
       })
     );
