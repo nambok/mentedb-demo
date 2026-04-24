@@ -1,10 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, ArrowDown, ArrowUp, Zap, BarChart3 } from 'lucide-react';
+import { Brain, ArrowDown, ArrowUp, Zap, BarChart3, ShieldAlert, Sparkles, Activity } from 'lucide-react';
 
 interface MemoryFeedProps {
-  memoriesUsed: Array<{ content: string; relevance: number; type: string }>;
+  memoriesUsed: Array<{ content: string; relevance: number; type: string; is_new?: boolean; from_cache?: boolean; health?: number; scope?: string; tags?: string[] }>;
   memoriesStored: Array<{ content: string; type: string }>;
   contradiction: { old: string; new: string } | null;
+  painWarnings: Array<{ signal_id?: string; description?: string; intensity?: number }>;
+  proactiveRecalls: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
+  detectedActions: Array<{ type: string; detail: string }>;
   totalMemories: number;
   avgHealth: number;
 }
@@ -13,10 +16,13 @@ export default function MemoryFeed({
   memoriesUsed,
   memoriesStored,
   contradiction,
+  painWarnings,
+  proactiveRecalls,
+  detectedActions,
   totalMemories,
   avgHealth,
 }: MemoryFeedProps) {
-  const hasActivity = memoriesUsed.length > 0 || memoriesStored.length > 0 || contradiction;
+  const hasActivity = memoriesUsed.length > 0 || memoriesStored.length > 0 || contradiction || painWarnings.length > 0 || proactiveRecalls.length > 0 || detectedActions.length > 0;
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-zinc-800 bg-zinc-900/80 overflow-hidden">
@@ -54,9 +60,14 @@ export default function MemoryFeed({
                   transition={{ delay: i * 0.1 }}
                   className="text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2 text-zinc-300"
                 >
-                  <span className="mr-1">📌</span>
-                  {m.content.slice(0, 100)}{m.content.length > 100 ? '...' : ''}
-                  <span className="ml-2 text-emerald-500/60">[{m.relevance.toFixed(2)}]</span>
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-emerald-400/60">[{m.type}]</span>
+                    {m.is_new && <span className="px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-medium">NEW</span>}
+                    {m.from_cache && <span className="px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-300 text-[9px] font-medium">CACHED</span>}
+                    {m.scope === 'always' && <span className="px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[9px] font-medium">ALWAYS</span>}
+                  </div>
+                  {(m.content ?? '').slice(0, 120)}{(m.content ?? '').length > 120 ? '...' : ''}
+                  <span className="ml-2 text-emerald-500/60">[{(m.relevance ?? 0).toFixed(2)}]</span>
                 </motion.div>
               ))}
             </motion.div>
@@ -83,7 +94,7 @@ export default function MemoryFeed({
                   className="text-xs bg-blue-500/5 border border-blue-500/20 rounded-lg px-3 py-2 text-zinc-300"
                 >
                   <span className="mr-1">💾</span>
-                  {m.content.slice(0, 100)}{m.content.length > 100 ? '...' : ''}
+                  {(m.content ?? '').slice(0, 100)}{(m.content ?? '').length > 100 ? '...' : ''}
                   <span className="ml-2 text-blue-400/60">[{m.type}]</span>
                 </motion.div>
               ))}
@@ -105,6 +116,89 @@ export default function MemoryFeed({
               <div className="text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-amber-300">
                 "{contradiction.old}" → "{contradiction.new}"
               </div>
+            </motion.div>
+          )}
+
+          {painWarnings.length > 0 && (
+            <motion.div
+              key="pain"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-red-400">
+                <ShieldAlert size={12} />
+                PAIN SIGNALS
+              </div>
+              {painWarnings.map((p, i) => (
+                <motion.div
+                  key={`pain-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-red-300"
+                >
+                  {p.description ?? 'Pain signal detected'}
+                  {p.intensity != null && (
+                    <span className="ml-2 text-red-400/60">[intensity: {p.intensity}]</span>
+                  )}
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {proactiveRecalls.length > 0 && (
+            <motion.div
+              key="proactive"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-purple-400">
+                <Sparkles size={12} />
+                PROACTIVE RECALL
+              </div>
+              {proactiveRecalls.map((r, i) => (
+                <motion.div
+                  key={`proactive-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="text-xs bg-purple-500/10 border border-purple-500/20 rounded-lg px-3 py-2 text-purple-300"
+                >
+                  <div className="text-purple-400/80 mb-1">{r.reason}</div>
+                  {r.memories.map((m, j) => (
+                    <div key={j} className="text-zinc-400 ml-2">• {(m.summary ?? '').slice(0, 80)}</div>
+                  ))}
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {detectedActions.length > 0 && (
+            <motion.div
+              key="actions"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-cyan-400">
+                <Activity size={12} />
+                DETECTED ACTIONS
+              </div>
+              {detectedActions.map((a, i) => (
+                <motion.div
+                  key={`action-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="text-xs bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-3 py-2 text-cyan-300"
+                >
+                  <span className="font-medium">{a.type}</span>: {a.detail}
+                </motion.div>
+              ))}
             </motion.div>
           )}
         </AnimatePresence>

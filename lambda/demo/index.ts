@@ -36,6 +36,11 @@ interface MemoryContext {
   relevance_score?: number;
   memory_type?: string;
   tags?: string[];
+  is_new?: boolean;
+  from_cache?: boolean;
+  same_project?: boolean;
+  health?: number;
+  scope?: string;
 }
 
 interface LambdaFunctionUrlEvent {
@@ -307,6 +312,9 @@ async function handleChat(
   let memoriesUsed: MemoryContext[] = [];
   let memoriesStored: Array<{ content: string; memory_type?: string; type?: string }> = [];
   let contradictionDetected: { old: string; new: string } | null = null;
+  let painWarnings: Array<{ signal_id?: string; description?: string; intensity?: number }> = [];
+  let proactiveRecalls: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }> = [];
+  let detectedActions: Array<{ type: string; detail: string }> = [];
   let systemPrompt: string;
 
   if (mode === "with_memory") {
@@ -320,14 +328,19 @@ async function handleChat(
       context?: MemoryContext[];
       contradictions?: number;
       contradiction_details?: Array<{ old_content: string; new_content: string }>;
-      pain_warnings?: string[];
+      pain_warnings?: Array<{ signal_id?: string; description?: string; intensity?: number }>;
       memories_stored?: Array<{ content: string; memory_type: string }>;
+      proactive_recalls?: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
+      detected_actions?: Array<{ type: string; detail: string }>;
+      stored?: number;
     };
 
     memoriesUsed = turnResult?.context ?? [];
     const contradictions = turnResult?.contradiction_details ?? [];
-    const painWarnings = turnResult?.pain_warnings ?? [];
+    painWarnings = turnResult?.pain_warnings ?? [];
     memoriesStored = turnResult?.memories_stored ?? [];
+    proactiveRecalls = turnResult?.proactive_recalls ?? [];
+    detectedActions = turnResult?.detected_actions ?? [];
     if (contradictions.length > 0) {
       contradictionDetected = {
         old: contradictions[0].old_content,
@@ -347,7 +360,11 @@ async function handleChat(
         : "No prior memories found for this session.";
 
     const painContext = painWarnings.length > 0
-      ? `\n\n⚠️ Pain signals:\n${painWarnings.join("\n")}`
+      ? `\n\n⚠️ Pain signals:\n${painWarnings.map(p => typeof p === 'string' ? p : (p.description ?? '')).join("\n")}`
+      : "";
+
+    const proactiveContext = proactiveRecalls.length > 0
+      ? `\n\n🔮 Related context:\n${proactiveRecalls.map(r => r.memories.map(m => m.summary).join("; ")).join("\n")}`
       : "";
 
     const contradictionContext = contradictionDetected
@@ -361,6 +378,7 @@ async function handleChat(
       "Recalled memories:",
       memoriesFormatted,
       painContext,
+      proactiveContext,
       contradictionContext,
       "",
       "Use these memories naturally in your responses.",
@@ -393,15 +411,23 @@ async function handleChat(
     response: responseText,
     model: BEDROCK_MODEL_DISPLAY,
     memories_used: memoriesUsed.map((m) => ({
-      content: m.content,
+      content: m.content ?? "",
       relevance: m.relevance_score ?? null,
       type: m.memory_type ?? "unknown",
+      is_new: m.is_new ?? false,
+      from_cache: m.from_cache ?? false,
+      health: m.health ?? 1,
+      scope: m.scope ?? "contextual",
+      tags: m.tags ?? [],
     })),
     memories_stored: memoriesStored.map((m) => ({
-      content: m.content,
+      content: m.content ?? "",
       type: m.memory_type ?? m.type ?? "unknown",
     })),
     contradiction_detected: contradictionDetected,
+    pain_warnings: painWarnings.map(p => typeof p === 'string' ? { description: p } : p),
+    proactive_recalls: proactiveRecalls,
+    detected_actions: detectedActions,
     turn_id: turnId,
     mode,
   });

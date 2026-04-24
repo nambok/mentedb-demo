@@ -27,9 +27,12 @@ export default function Chat() {
   const [leftLoading, setLeftLoading] = useState(false);
   const [rightLoading, setRightLoading] = useState(false);
 
-  const [memoriesUsed, setMemoriesUsed] = useState<Array<{ content: string; relevance: number; type: string }>>([]);
+  const [memoriesUsed, setMemoriesUsed] = useState<Array<{ content: string; relevance: number; type: string; is_new?: boolean; from_cache?: boolean; health?: number; scope?: string; tags?: string[] }>>([]);
   const [memoriesStored, setMemoriesStored] = useState<Array<{ content: string; type: string }>>([]);
   const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null);
+  const [painWarnings, setPainWarnings] = useState<Array<{ signal_id?: string; description?: string; intensity?: number }>>([]);
+  const [proactiveRecalls, setProactiveRecalls] = useState<Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>>([]);
+  const [detectedActions, setDetectedActions] = useState<Array<{ type: string; detail: string }>>([]);
   const [totalMemories, setTotalMemories] = useState(0);
   const [avgHealth, setAvgHealth] = useState(0);
   const [modelName, setModelName] = useState<string>('Amazon Nova Lite');
@@ -98,6 +101,9 @@ export default function Chat() {
       setMemoriesUsed(r.memories_used || []);
       setMemoriesStored(r.memories_stored || []);
       setContradiction(r.contradiction_detected || null);
+      setPainWarnings(r.pain_warnings || []);
+      setProactiveRecalls(r.proactive_recalls || []);
+      setDetectedActions(r.detected_actions || []);
       if (r.model) setModelName(r.model);
     } else {
       setRightMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (rightResult.reason as Error).message }]);
@@ -125,6 +131,9 @@ export default function Chat() {
     setMemoriesUsed([]);
     setMemoriesStored([]);
     setContradiction(null);
+    setPainWarnings([]);
+    setProactiveRecalls([]);
+    setDetectedActions([]);
     setTotalMemories(0);
     setAvgHealth(0);
     setTurnCount(0);
@@ -156,6 +165,9 @@ export default function Chat() {
     setMemoriesUsed([]);
     setMemoriesStored([]);
     setContradiction(null);
+    setPainWarnings([]);
+    setProactiveRecalls([]);
+    setDetectedActions([]);
     setScenarioStep(0);
     setTurnCount(0);
     // Reset and re-seed with new persona
@@ -217,6 +229,9 @@ export default function Chat() {
             memoriesUsed={memoriesUsed}
             memoriesStored={memoriesStored}
             contradiction={contradiction}
+            painWarnings={painWarnings}
+            proactiveRecalls={proactiveRecalls}
+            detectedActions={detectedActions}
             totalMemories={totalMemories}
             avgHealth={avgHealth}
           />

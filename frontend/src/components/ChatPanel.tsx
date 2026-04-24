@@ -166,7 +166,7 @@ function MessageBubble({
           >
             {message.memoriesUsed.map((m, j) => (
               <div key={j} className="text-xs bg-emerald-500/5 border border-emerald-500/20 rounded px-2 py-1 text-emerald-300/80">
-                📌 {m.content.slice(0, 80)}... <span className="text-emerald-500/60">[{m.relevance.toFixed(2)}]</span>
+                📌 {(m.content ?? '').slice(0, 80)}... <span className="text-emerald-500/60">[{(m.relevance ?? 0).toFixed(2)}]</span>
               </div>
             ))}
           </motion.div>

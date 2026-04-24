@@ -9,9 +9,21 @@ export interface ChatRequest {
 export interface ChatResponse {
   response: string;
   model: string;
-  memories_used: Array<{ content: string; relevance: number; type: string }>;
+  memories_used: Array<{
+    content: string;
+    relevance: number;
+    type: string;
+    is_new?: boolean;
+    from_cache?: boolean;
+    health?: number;
+    scope?: string;
+    tags?: string[];
+  }>;
   memories_stored: Array<{ content: string; type: string }>;
   contradiction_detected: { old: string; new: string } | null;
+  pain_warnings?: Array<{ signal_id?: string; description?: string; intensity?: number }>;
+  proactive_recalls?: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
+  detected_actions?: Array<{ type: string; detail: string }>;
   turn_id: number;
 }
 
