@@ -112,7 +112,6 @@ export class DemoStack extends cdk.Stack {
         allowedMethods: [
           lambda.HttpMethod.POST,
           lambda.HttpMethod.GET,
-          lambda.HttpMethod.OPTIONS,
         ],
         allowedHeaders: ["content-type"],
         maxAge: cdk.Duration.hours(1),
