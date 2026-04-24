@@ -29,6 +29,7 @@ jobs:
         run: |
           cd infra
           npm ci
+          npm install -g esbuild
           npx cdk deploy --all --require-approval never
 
       - name: Build frontend

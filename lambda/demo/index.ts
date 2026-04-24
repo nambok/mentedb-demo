@@ -428,16 +428,26 @@ async function handleReset(
 }
 
 async function handleMemories(
-  sessionId: string | undefined,
+  queryParams: Record<string, string | undefined> | undefined,
   secrets: Secrets
 ): Promise<LambdaResponse> {
+  const sessionId = queryParams?.["session_id"];
   if (!sessionId) {
     return respond(400, { error: "Missing session_id query parameter" });
   }
 
   try {
-    const memories = await mentedbRestGet(secrets, "/api/memories");
-    return respond(200, { memories });
+    const limit = Math.min(parseInt(queryParams?.["limit"] ?? "50", 10) || 50, 100);
+    const cursor = queryParams?.["cursor"] ?? "";
+    const search = queryParams?.["search"] ?? "";
+
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (cursor) params.set("cursor", cursor);
+    if (search) params.set("search", search);
+
+    const result = await mentedbRestGet(secrets, `/api/memories?${params.toString()}`);
+    return respond(200, result as Record<string, unknown>);
   } catch (err) {
     console.error("Memories fetch error:", err);
     return respond(500, { error: "Failed to fetch memories" });
@@ -663,8 +673,7 @@ export const handler = async (
     }
 
     if (method === "GET" && path === "/api/memories") {
-      const sessionId = event.queryStringParameters?.["session_id"];
-      const result = await handleMemories(sessionId, secrets);
+      const result = await handleMemories(event.queryStringParameters ?? {}, secrets);
       return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
     }
 
