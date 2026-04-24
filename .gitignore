@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.secret
+*.key
+.DS_Store
+cdk.out/
