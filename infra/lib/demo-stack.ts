@@ -111,7 +111,7 @@ export class DemoStack extends cdk.Stack {
 
     const fnUrl = demoFn.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
-      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      invokeMode: lambda.InvokeMode.BUFFERED,
       cors: {
         allowedOrigins: [demoDomain],
         allowedMethods: [
