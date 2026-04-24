@@ -66,8 +66,8 @@ export class DemoStack extends cdk.Stack {
 
     const demoFn = new nodejs.NodejsFunction(this, "DemoApiFunction", {
       functionName: `${prefix}-demo-api`,
-      runtime: lambda.Runtime.NODEJS_24_X,
-      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.X86_64,
       entry: path.join(repoRoot, "lambda/demo/index.ts"),
       projectRoot: repoRoot,
       depsLockFilePath: path.join(repoRoot, "lambda/demo/package-lock.json"),
@@ -83,7 +83,7 @@ export class DemoStack extends cdk.Stack {
       bundling: {
         minify: true,
         sourceMap: true,
-        target: "node24",
+        target: "node22",
         format: nodejs.OutputFormat.ESM,
         mainFields: ["module", "main"],
         externalModules: ["@aws-sdk/*"],
