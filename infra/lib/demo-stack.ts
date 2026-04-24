@@ -10,6 +10,7 @@ import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as path from "path";
 import { Construct } from "constructs";
 
 export interface DemoStackProps extends cdk.StackProps {
@@ -61,11 +62,15 @@ export class DemoStack extends cdk.Stack {
         ? "https://demo.mentedb.com"
         : "http://localhost:5173";
 
+    const repoRoot = path.resolve(__dirname, "../..");
+
     const demoFn = new nodejs.NodejsFunction(this, "DemoApiFunction", {
       functionName: `${prefix}-demo-api`,
       runtime: lambda.Runtime.NODEJS_20_X,
       architecture: lambda.Architecture.ARM_64,
-      entry: "../lambda/demo/index.ts",
+      entry: path.join(repoRoot, "lambda/demo/index.ts"),
+      projectRoot: repoRoot,
+      depsLockFilePath: path.join(repoRoot, "lambda/demo/package-lock.json"),
       handler: "handler",
       memorySize: 512,
       timeout: cdk.Duration.seconds(60),
