@@ -56,12 +56,15 @@ export async function resetSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function seedPersona(sessionId: string, persona: string): Promise<void> {
-  await fetch(`${BASE}/api/seed`, {
+export async function seedPersona(sessionId: string, persona: string): Promise<Memory[]> {
+  const res = await fetch(`${BASE}/api/seed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, persona }),
   });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.memories || [];
 }
 
 export async function getMemories(sessionId: string): Promise<Memory[]> {

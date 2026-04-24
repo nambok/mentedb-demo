@@ -5,7 +5,7 @@ import MemoryFeed from '../components/MemoryFeed';
 import MemoryDrawer from '../components/MemoryDrawer';
 import ScenarioPlayer from '../components/ScenarioPlayer';
 import Header from '../components/Header';
-import { sendChat, resetSession, seedPersona, getMemories, type Memory } from '../lib/api';
+import { sendChat, resetSession, seedPersona, type Memory } from '../lib/api';
 import { personaScenarios } from '../data/scenarios';
 
 export default function Chat() {
@@ -44,10 +44,10 @@ export default function Chat() {
   // Seed persona on mount and fetch seeded memories
   useEffect(() => {
     (async () => {
+      let mems: Memory[] = [];
       if (selectedPersona !== 'fresh') {
-        await seedPersona(sessionId, selectedPersona).catch(() => {});
+        mems = await seedPersona(sessionId, selectedPersona).catch(() => [] as Memory[]);
       }
-      const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
       setSeededMemories(mems);
       setTotalMemories(mems.length);
       if (mems.length > 0) {
@@ -56,15 +56,11 @@ export default function Chat() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update memory stats after each turn
+  // Update memory stats after each turn (increment from chat activity)
   useEffect(() => {
-    getMemories(sessionId).then(mems => {
-      setTotalMemories(mems.length);
-      if (mems.length > 0) {
-        setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
-      }
-    }).catch(() => {});
-  }, [turnCount, sessionId]);
+    // Count newly stored memories from the latest turn
+    setTotalMemories(prev => prev + memoriesStored.length);
+  }, [memoriesStored]);
 
   // Get only messages from the current session (after the last session break)
   const getCurrentSessionHistory = useCallback(() => {
@@ -172,13 +168,12 @@ export default function Chat() {
     setSessionNumber(1);
     setSeededMemories([]);
     if (selectedPersona !== 'fresh') {
-      await seedPersona(sessionId, selectedPersona).catch(() => {});
-    }
-    const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
-    setSeededMemories(mems);
-    setTotalMemories(mems.length);
-    if (mems.length > 0) {
-      setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
+      const mems = await seedPersona(sessionId, selectedPersona).catch(() => [] as Memory[]);
+      setSeededMemories(mems);
+      setTotalMemories(mems.length);
+      if (mems.length > 0) {
+        setAvgHealth(mems.reduce((sum: number, m: Memory) => sum + m.health, 0) / mems.length);
+      }
     }
   }, [sessionId, selectedPersona]);
 
@@ -197,13 +192,15 @@ export default function Chat() {
     setSeededMemories([]);
     await resetSession(sessionId).catch(() => {});
     if (id !== 'fresh') {
-      await seedPersona(sessionId, id).catch(() => {});
-    }
-    const mems = await getMemories(sessionId).catch(() => [] as Memory[]);
-    setSeededMemories(mems);
-    setTotalMemories(mems.length);
-    if (mems.length > 0) {
-      setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
+      const mems = await seedPersona(sessionId, id).catch(() => [] as Memory[]);
+      setSeededMemories(mems);
+      setTotalMemories(mems.length);
+      if (mems.length > 0) {
+        setAvgHealth(mems.reduce((sum, m) => sum + m.health, 0) / mems.length);
+      }
+    } else {
+      setTotalMemories(0);
+      setAvgHealth(0);
     }
   }, [sessionId]);
 

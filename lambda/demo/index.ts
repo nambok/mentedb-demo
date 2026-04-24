@@ -440,22 +440,15 @@ async function handleChat(
 
 async function handleReset(
   body: ResetRequest,
-  secrets: Secrets
+  _secrets: Secrets
 ): Promise<LambdaResponse> {
   const { session_id } = body;
   if (!session_id) {
     return respond(400, { error: "Missing session_id" });
   }
 
-  try {
-    await mentedbToolCall(secrets, "forget_all", {
-      confirm: "CONFIRM",
-    });
-  } catch (err) {
-    console.error("Reset error:", err);
-    return respond(500, { error: "Failed to reset session" });
-  }
-
+  // No-op: each browser session uses its own project_context (demo-{session_id})
+  // so memories are already isolated. No need to delete globally.
   return respond(200, { ok: true });
 }
 
@@ -615,13 +608,16 @@ async function handleSeed(
     });
   }
 
+  const project = `demo-${session_id}`;
+
+  // Seed each memory with project-scoped tags
   let seeded = 0;
   for (const mem of memories) {
     try {
       await mentedbToolCall(secrets, "store_memory", {
         content: mem.content,
         memory_type: mem.memory_type,
-        tags: mem.tags,
+        tags: [...mem.tags, `project:${project}`],
       });
       seeded++;
     } catch (err) {
@@ -629,7 +625,25 @@ async function handleSeed(
     }
   }
 
-  return respond(200, { ok: true, seeded });
+  // Also do a process_turn so the engine indexes these for this project
+  try {
+    await mentedbToolCall(secrets, "process_turn", {
+      user_message: `[system] Persona initialized: ${persona}`,
+      assistant_response: "",
+      turn_id: 0,
+      project_context: project,
+    });
+  } catch (err) {
+    console.error("process_turn for seed project failed:", err);
+  }
+
+  return respond(200, { ok: true, seeded, memories: memories.map((m, i) => ({
+    id: `seed-${i}`,
+    content: m.content,
+    memory_type: m.memory_type,
+    tags: m.tags,
+    health: 1.0,
+  }))});
 }
 
 // ---------------------------------------------------------------------------
