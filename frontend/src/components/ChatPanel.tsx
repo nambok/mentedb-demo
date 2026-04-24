@@ -24,15 +24,16 @@ function TypingMessage({ content }: { content: string }) {
 
   useEffect(() => {
     setDisplayed(0);
+    const chunkSize = Math.max(3, Math.floor(text.length / 60));
     const timer = setInterval(() => {
       setDisplayed(prev => {
         if (prev >= text.length) {
           clearInterval(timer);
-          return prev;
+          return text.length;
         }
-        return prev + 1;
+        return Math.min(prev + chunkSize, text.length);
       });
-    }, 12);
+    }, 8);
     return () => clearInterval(timer);
   }, [text]);
 
