@@ -144,7 +144,7 @@ function MessageBubble({
         {message.memoriesUsed && message.memoriesUsed.length > 0 && (
           <button
             onClick={() => setMemoriesExpanded(!memoriesExpanded)}
-            className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
           >
             <BookMarked size={12} />
             <span>{message.memoriesUsed.length} memories recalled</span>

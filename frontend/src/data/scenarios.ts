@@ -1,3 +1,6 @@
+import type { LucideIcon } from 'lucide-react';
+import { Zap, ShieldAlert, RefreshCw, Puzzle, Link2, ClipboardList } from 'lucide-react';
+
 export interface ScenarioStep {
   user: string;
   hint?: string;
@@ -6,7 +9,7 @@ export interface ScenarioStep {
 export interface Scenario {
   id: string;
   title: string;
-  emoji: string;
+  icon: LucideIcon;
   description: string;
   feature: string;
   steps: ScenarioStep[];
@@ -16,7 +19,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'contradiction',
     title: 'The Contradiction Catcher',
-    emoji: '⚡',
+    icon: Zap,
     description: 'Watch MenteDB detect when you change your mind',
     feature: 'Contradiction Detection',
     steps: [
@@ -28,7 +31,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'pain',
     title: 'The Pain Learner',
-    emoji: '🔴',
+    icon: ShieldAlert,
     description: 'MenteDB remembers bad experiences and avoids them',
     feature: 'Pain Signals',
     steps: [
@@ -40,7 +43,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'cross-session',
     title: 'Cross-Session Memory',
-    emoji: '🔄',
+    icon: RefreshCw,
     description: 'The killer feature — memory survives conversation resets',
     feature: 'Persistent Memory',
     steps: [
@@ -53,7 +56,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'context',
     title: 'The Context Assembler',
-    emoji: '🧩',
+    icon: Puzzle,
     description: 'Scattered preferences become personalized recommendations',
     feature: 'Context Assembly',
     steps: [
@@ -66,7 +69,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'entity',
     title: 'The Entity Resolver',
-    emoji: '🔗',
+    icon: Link2,
     description: 'MenteDB connects the dots between different mentions',
     feature: 'Entity Resolution',
     steps: [
@@ -78,7 +81,7 @@ export const scenarios: Scenario[] = [
   {
     id: 'meeting',
     title: 'The Meeting Recap',
-    emoji: '📋',
+    icon: ClipboardList,
     description: 'Extract and recall structured facts across sessions',
     feature: 'Fact Extraction',
     steps: [

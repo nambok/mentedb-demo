@@ -25,11 +25,13 @@ export default function ScenarioPlayer({
     (scenario.id === 'cross-session' || scenario.id === 'meeting') &&
     currentStep === 3;
 
+  const Icon = scenario.icon;
+
   return (
     <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-3 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{scenario.emoji}</span>
+          <Icon size={18} className="text-emerald-400 shrink-0" />
           <div>
             <span className="text-sm font-medium text-zinc-200">{scenario.title}</span>
             <span className="ml-2 text-xs text-zinc-500">— {scenario.feature}</span>
@@ -62,7 +64,7 @@ export default function ScenarioPlayer({
           <button
             onClick={onClearChat}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm hover:bg-amber-500/20 transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
           >
             <RotateCcw size={14} />
             Clear Chat History (keep memories)
@@ -71,7 +73,7 @@ export default function ScenarioPlayer({
           <button
             onClick={() => step && onSendStep(step.user)}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
           >
             {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             Send: "{step?.user.slice(0, 50)}{(step?.user.length ?? 0) > 50 ? '...' : ''}"

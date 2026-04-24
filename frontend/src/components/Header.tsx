@@ -1,4 +1,4 @@
-import { RotateCcw, ExternalLink } from 'lucide-react';
+import { RotateCcw, ExternalLink, Target, MessageSquare } from 'lucide-react';
 
 function GithubIcon({ size = 14 }: { size?: number }) {
   return (
@@ -55,7 +55,7 @@ export default function Header({
           >
             {scenarios.map(s => (
               <option key={s.id} value={s.id}>
-                {s.emoji} {s.title}
+                {s.title}
               </option>
             ))}
           </select>
@@ -65,18 +65,19 @@ export default function Header({
       <div className="flex items-center gap-2">
         <button
           onClick={onToggleMode}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
             mode === 'guided'
               ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
               : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
           }`}
         >
-          {mode === 'guided' ? '🎯 Guided' : '💬 Free Chat'}
+          {mode === 'guided' ? <Target size={13} /> : <MessageSquare size={13} />}
+          {mode === 'guided' ? 'Guided' : 'Free Chat'}
         </button>
 
         <button
           onClick={onReset}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <RotateCcw size={13} />
           <span className="hidden sm:inline">Reset</span>
@@ -86,7 +87,7 @@ export default function Header({
           href="https://github.com/nambok/mentedb-demo"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <GithubIcon size={14} />
           <span className="hidden sm:inline">Source</span>
@@ -96,7 +97,7 @@ export default function Header({
           href="https://mentedb.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <ExternalLink size={13} />
           <span className="hidden sm:inline">mentedb.com</span>

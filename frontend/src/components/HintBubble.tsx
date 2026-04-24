@@ -21,7 +21,7 @@ export default function HintBubble({ text, visible, onDismiss }: HintBubbleProps
           <span className="flex-1">{text}</span>
           <button
             onClick={onDismiss}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0"
+            className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 cursor-pointer"
           >
             <X size={14} />
           </button>
