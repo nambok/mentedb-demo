@@ -8,6 +8,7 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   response: string;
+  model: string;
   memories_used: Array<{ content: string; relevance: number; type: string }>;
   memories_stored: Array<{ content: string; type: string }>;
   contradiction_detected: { old: string; new: string } | null;

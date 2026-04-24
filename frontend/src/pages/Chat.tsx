@@ -32,6 +32,7 @@ export default function Chat() {
   const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null);
   const [totalMemories, setTotalMemories] = useState(0);
   const [avgHealth, setAvgHealth] = useState(0);
+  const [modelName, setModelName] = useState<string>('');
 
   const [input, setInput] = useState('');
   const [currentHint, setCurrentHint] = useState<string | null>(null);
@@ -97,6 +98,7 @@ export default function Chat() {
       setMemoriesUsed(r.memories_used || []);
       setMemoriesStored(r.memories_stored || []);
       setContradiction(r.contradiction_detected || null);
+      if (r.model) setModelName(r.model);
     } else {
       setRightMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (rightResult.reason as Error).message }]);
     }
@@ -189,6 +191,7 @@ export default function Chat() {
               messages={leftMessages}
               isLoading={leftLoading}
               accentColor="zinc"
+              model={modelName}
             />
           </div>
           <div className="flex-1 min-h-0">
@@ -198,6 +201,7 @@ export default function Chat() {
               messages={rightMessages}
               isLoading={rightLoading}
               accentColor="emerald"
+              model={modelName}
             />
           </div>
         </div>

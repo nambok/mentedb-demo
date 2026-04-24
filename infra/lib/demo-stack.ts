@@ -9,6 +9,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
 export interface DemoStackProps extends cdk.StackProps {
@@ -42,7 +43,7 @@ export class DemoStack extends cdk.Stack {
     // --- Secrets Manager ---
     const apiSecrets = new secretsmanager.Secret(this, "DemoApiSecrets", {
       secretName: `${prefix}/demo/api-keys`,
-      description: "API keys for MenteDB demo (Anthropic + MenteDB internal key)",
+      description: "MenteDB API key for demo (no Anthropic key needed — uses Bedrock via IAM)",
     });
 
     // --- Rate Limit Table ---
@@ -86,6 +87,17 @@ export class DemoStack extends cdk.Stack {
 
     apiSecrets.grantRead(demoFn);
     rateLimitTable.grantReadWriteData(demoFn);
+
+    // Grant Bedrock invoke permission (Claude Haiku via cross-region inference)
+    demoFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel"],
+        resources: [
+          `arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0`,
+          `arn:aws:bedrock:us:${this.account}:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0`,
+        ],
+      })
+    );
 
     const fnUrl = demoFn.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,

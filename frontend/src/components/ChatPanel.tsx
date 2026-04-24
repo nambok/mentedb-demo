@@ -15,6 +15,7 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   isLoading: boolean;
   accentColor: 'zinc' | 'emerald';
+  model?: string;
 }
 
 function TypingMessage({ content }: { content: string }) {
@@ -48,6 +49,7 @@ export default function ChatPanel({
   messages,
   isLoading,
   accentColor,
+  model,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastMsgIndex = messages.length - 1;
@@ -64,7 +66,7 @@ export default function ChatPanel({
     <div className={`flex flex-col h-full rounded-xl border ${borderClass} ${glowClass} bg-zinc-900/80 overflow-hidden`}>
       <div className={`px-4 py-3 border-b ${borderClass} ${headerBg} shrink-0`}>
         <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
-        <p className="text-xs text-zinc-500">{subtitle}</p>
+        <p className="text-xs text-zinc-500">{subtitle}{model && <span className="ml-1.5 text-zinc-600">· {model}</span>}</p>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">

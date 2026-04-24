@@ -7,6 +7,10 @@ import {
   UpdateItemCommand,
   GetItemCommand,
 } from "@aws-sdk/client-dynamodb";
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,7 +60,6 @@ interface LambdaResponse {
 // ---------------------------------------------------------------------------
 
 interface Secrets {
-  ANTHROPIC_API_KEY: string;
   MENTEDB_API_KEY: string;
   MENTEDB_API_URL: string;
 }
@@ -65,6 +68,7 @@ let cachedSecrets: Secrets | null = null;
 
 const smClient = new SecretsManagerClient({});
 const ddbClient = new DynamoDBClient({});
+const bedrockClient = new BedrockRuntimeClient({ region: "us-east-1" });
 
 async function getSecrets(): Promise<Secrets> {
   if (cachedSecrets) return cachedSecrets;
@@ -242,41 +246,39 @@ async function mentedbRestGet(
 }
 
 // ---------------------------------------------------------------------------
-// Anthropic helper
+// Bedrock (Claude) helper
 // ---------------------------------------------------------------------------
 
-async function callAnthropic(
-  apiKey: string,
+const BEDROCK_MODEL_ID = "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+
+async function callBedrock(
   systemPrompt: string,
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 1024,
-      stream: false,
-      system: systemPrompt,
-      messages,
-    }),
+  const payload = {
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  };
+
+  const command = new InvokeModelCommand({
+    modelId: BEDROCK_MODEL_ID,
+    contentType: "application/json",
+    accept: "application/json",
+    body: new TextEncoder().encode(JSON.stringify(payload)),
   });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Anthropic API error (${resp.status}): ${text}`);
-  }
-
-  const data = (await resp.json()) as {
+  const response = await bedrockClient.send(command);
+  const result = JSON.parse(new TextDecoder().decode(response.body)) as {
     content: Array<{ type: string; text?: string }>;
   };
 
   return (
-    data.content
+    result.content
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")
       .join("") || ""
@@ -369,9 +371,8 @@ async function handleChat(
       "You are a helpful AI assistant. Answer questions concisely and helpfully.";
   }
 
-  // 3. Call Anthropic
-  const responseText = await callAnthropic(
-    secrets.ANTHROPIC_API_KEY,
+  // 3. Call Bedrock
+  const responseText = await callBedrock(
     systemPrompt,
     messages
   );
@@ -389,6 +390,7 @@ async function handleChat(
 
   return respond(200, {
     response: responseText,
+    model: BEDROCK_MODEL_ID,
     memories_used: memoriesUsed.map((m) => ({
       content: m.content,
       relevance: m.relevance_score ?? null,
