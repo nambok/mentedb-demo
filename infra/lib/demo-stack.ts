@@ -99,13 +99,12 @@ export class DemoStack extends cdk.Stack {
     apiSecrets.grantRead(demoFn);
     rateLimitTable.grantReadWriteData(demoFn);
 
-    // Grant Bedrock invoke permission (Claude Haiku 4.5 via cross-region inference)
+    // Grant Bedrock invoke permission (Amazon Nova Lite — no marketplace subscription needed)
     demoFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["bedrock:InvokeModel"],
         resources: [
-          `arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
-          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
+          `arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0`,
         ],
       })
     );

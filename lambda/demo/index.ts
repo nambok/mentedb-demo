@@ -246,23 +246,25 @@ async function mentedbRestGet(
 }
 
 // ---------------------------------------------------------------------------
-// Bedrock (Claude) helper
+// Bedrock (Amazon Nova Lite) helper
 // ---------------------------------------------------------------------------
 
-const BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+const BEDROCK_MODEL_ID = "amazon.nova-lite-v1:0";
+const BEDROCK_MODEL_DISPLAY = "Amazon Nova Lite";
 
 async function callBedrock(
   systemPrompt: string,
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
   const payload = {
-    anthropic_version: "bedrock-2023-05-31",
-    max_tokens: 1024,
-    system: systemPrompt,
+    system: [{ text: systemPrompt }],
     messages: messages.map((m) => ({
       role: m.role,
-      content: m.content,
+      content: [{ text: m.content }],
     })),
+    inferenceConfig: {
+      maxTokens: 1024,
+    },
   };
 
   const command = new InvokeModelCommand({
@@ -274,12 +276,11 @@ async function callBedrock(
 
   const response = await bedrockClient.send(command);
   const result = JSON.parse(new TextDecoder().decode(response.body)) as {
-    content: Array<{ type: string; text?: string }>;
+    output: { message: { content: Array<{ text?: string }> } };
   };
 
   return (
-    result.content
-      .filter((b) => b.type === "text")
+    result.output.message.content
       .map((b) => b.text ?? "")
       .join("") || ""
   );
@@ -390,7 +391,7 @@ async function handleChat(
 
   return respond(200, {
     response: responseText,
-    model: "Claude Haiku 4.5",
+    model: BEDROCK_MODEL_DISPLAY,
     memories_used: memoriesUsed.map((m) => ({
       content: m.content,
       relevance: m.relevance_score ?? null,
