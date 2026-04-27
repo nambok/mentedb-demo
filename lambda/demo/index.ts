@@ -375,9 +375,8 @@ async function handleChat(
       "You are a helpful AI assistant with persistent memory powered by MenteDB.",
       "You remember previous conversations and preferences.",
       "",
-      "IMPORTANT: Keep responses concise (2-4 short paragraphs max). This is a demo of memory capabilities, not a coding tutorial.",
+      "IMPORTANT: Keep responses concise (2-4 short paragraphs max).",
       "Do NOT output long code blocks or step-by-step setup guides unless explicitly asked.",
-      "Focus on showing that you REMEMBER the user's context, preferences, and history.",
       "Use markdown formatting: **bold** for emphasis, bullet points for lists, `inline code` for technical terms.",
       "",
       "Recalled memories:",
@@ -391,8 +390,13 @@ async function handleChat(
       "If a contradiction was detected, acknowledge the change naturally.",
     ].join("\n");
   } else {
-    systemPrompt =
-      "You are a helpful AI assistant. Answer questions concisely and helpfully.";
+    systemPrompt = [
+      "You are a helpful AI assistant.",
+      "",
+      "IMPORTANT: Keep responses concise (2-4 short paragraphs max).",
+      "Do NOT output long code blocks or step-by-step setup guides unless explicitly asked.",
+      "Use markdown formatting: **bold** for emphasis, bullet points for lists, `inline code` for technical terms.",
+    ].join("\n");
   }
 
   // 3. Call Bedrock
