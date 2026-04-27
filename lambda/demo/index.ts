@@ -318,29 +318,47 @@ async function handleChat(
   let systemPrompt: string;
 
   if (mode === "with_memory") {
-    // 1. Call process_turn to recall + store
-    const turnResult = (await mentedbToolCall(secrets, "process_turn", {
-      user_message: lastUserMsg,
-      assistant_response: "",
-      turn_id: turnId,
-      project_context: `demo-${session_id}`,
-    })) as {
+    // 1. Call process_turn to recall + store — gracefully degrade if MenteDB is down
+    let turnResult: {
       context?: MemoryContext[];
       contradictions?: number;
       contradiction_details?: Array<{ old_content: string; new_content: string }>;
       pain_warnings?: Array<{ signal_id?: string; description?: string; intensity?: number }>;
       memories_stored?: Array<{ content: string; memory_type: string }>;
-      proactive_recalls?: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      proactive_recalls?: Array<any>;
       detected_actions?: Array<{ type: string; detail: string }>;
       stored?: number;
-    };
+    } = {};
 
-    memoriesUsed = Array.isArray(turnResult?.context) ? turnResult.context : [];
-    const contradictions = Array.isArray(turnResult?.contradiction_details) ? turnResult.contradiction_details : [];
-    painWarnings = Array.isArray(turnResult?.pain_warnings) ? turnResult.pain_warnings : [];
-    memoriesStored = Array.isArray(turnResult?.memories_stored) ? turnResult.memories_stored : [];
-    proactiveRecalls = Array.isArray(turnResult?.proactive_recalls) ? turnResult.proactive_recalls : [];
-    detectedActions = Array.isArray(turnResult?.detected_actions) ? turnResult.detected_actions : [];
+    try {
+      turnResult = (await mentedbToolCall(secrets, "process_turn", {
+        user_message: lastUserMsg,
+        assistant_response: "",
+        turn_id: turnId,
+        project_context: `demo-${session_id}`,
+      })) as typeof turnResult;
+    } catch (err) {
+      console.error("process_turn failed, falling back to no-memory mode:", err);
+    }
+
+    memoriesUsed = Array.isArray(turnResult.context) ? turnResult.context : [];
+    const contradictions = Array.isArray(turnResult.contradiction_details) ? turnResult.contradiction_details : [];
+    painWarnings = Array.isArray(turnResult.pain_warnings) ? turnResult.pain_warnings : [];
+    memoriesStored = Array.isArray(turnResult.memories_stored) ? turnResult.memories_stored : [];
+    // MenteDB returns { action_type, content, memory_id, relevance } — map to frontend shape
+    const rawRecalls = Array.isArray(turnResult.proactive_recalls) ? turnResult.proactive_recalls : [];
+    proactiveRecalls = rawRecalls.map((r: { action_type?: string; content?: string; memory_id?: string; relevance?: number; trigger?: string; reason?: string; memories?: Array<{ summary: string }> }) => {
+      if (r.trigger && r.reason) return r as { trigger: string; reason: string; memories: Array<{ summary: string }> };
+      const content = r.content ?? '';
+      const firstLine = content.split('\n')[0].replace(/^User:\s*/, '').slice(0, 120);
+      return {
+        trigger: r.action_type ?? 'recall',
+        reason: firstLine || 'Related memory',
+        memories: [{ summary: content.slice(0, 200) }],
+      };
+    });
+    detectedActions = Array.isArray(turnResult.detected_actions) ? turnResult.detected_actions : [];
     if (contradictions.length > 0) {
       contradictionDetected = {
         old: contradictions[0].old_content,
