@@ -285,7 +285,7 @@ async function callBedrock(
   };
 
   return (
-    result.output.message.content
+    (result.output?.message?.content ?? [])
       .map((b) => b.text ?? "")
       .join("") || ""
   );
@@ -335,12 +335,12 @@ async function handleChat(
       stored?: number;
     };
 
-    memoriesUsed = turnResult?.context ?? [];
-    const contradictions = turnResult?.contradiction_details ?? [];
-    painWarnings = turnResult?.pain_warnings ?? [];
-    memoriesStored = turnResult?.memories_stored ?? [];
-    proactiveRecalls = turnResult?.proactive_recalls ?? [];
-    detectedActions = turnResult?.detected_actions ?? [];
+    memoriesUsed = Array.isArray(turnResult?.context) ? turnResult.context : [];
+    const contradictions = Array.isArray(turnResult?.contradiction_details) ? turnResult.contradiction_details : [];
+    painWarnings = Array.isArray(turnResult?.pain_warnings) ? turnResult.pain_warnings : [];
+    memoriesStored = Array.isArray(turnResult?.memories_stored) ? turnResult.memories_stored : [];
+    proactiveRecalls = Array.isArray(turnResult?.proactive_recalls) ? turnResult.proactive_recalls : [];
+    detectedActions = Array.isArray(turnResult?.detected_actions) ? turnResult.detected_actions : [];
     if (contradictions.length > 0) {
       contradictionDetected = {
         old: contradictions[0].old_content,
@@ -364,7 +364,7 @@ async function handleChat(
       : "";
 
     const proactiveContext = proactiveRecalls.length > 0
-      ? `\n\n🔮 Related context:\n${proactiveRecalls.map(r => r.memories.map(m => m.summary).join("; ")).join("\n")}`
+      ? `\n\n🔮 Related context:\n${proactiveRecalls.map(r => (r.memories ?? []).map(m => m.summary).join("; ")).join("\n")}`
       : "";
 
     const contradictionContext = contradictionDetected
@@ -738,7 +738,6 @@ export const handler = async (
     return respond(404, { error: `Not found: ${method} ${path}` }, origin);
   } catch (err) {
     console.error("Unhandled error:", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return respond(500, { error: message }, origin);
+    return respond(500, { error: "Something went wrong. Please try again." }, origin);
   }
 };

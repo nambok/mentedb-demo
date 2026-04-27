@@ -171,7 +171,7 @@ export default function MemoryFeed({
                   className="text-xs bg-purple-500/10 border border-purple-500/20 rounded-lg px-3 py-2 text-purple-300"
                 >
                   <div className="text-purple-400/80 mb-1">{r.reason}</div>
-                  {r.memories.map((m, j) => (
+                  {(r.memories ?? []).map((m, j) => (
                     <div key={j} className="text-zinc-400 ml-2">• {(m.summary ?? '').slice(0, 80)}</div>
                   ))}
                 </motion.div>

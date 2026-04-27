@@ -110,7 +110,7 @@ export default function Chat() {
         setDetectedActions(r.detected_actions || []);
         if (r.model) setModelName(r.model);
       } else {
-        assistantContent = '❌ Error: ' + (mainResult.reason as Error).message;
+        assistantContent = 'Something went wrong — please try again.';
       }
 
       if (counterfactualResult.status === 'fulfilled') {
@@ -122,13 +122,13 @@ export default function Chat() {
         {
           role: 'assistant',
           content: assistantContent,
-          memoriesUsed: mainResult.status === 'fulfilled' ? mainResult.value.memories_used : undefined,
+          memoriesUsed: mainResult.status === 'fulfilled' ? (mainResult.value.memories_used ?? []) : [],
           contradictionDetected: mainResult.status === 'fulfilled' ? mainResult.value.contradiction_detected : undefined,
           counterfactual,
         },
       ]);
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '❌ Error: ' + (err as Error).message }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong — please try again.' }]);
     }
 
     setIsLoading(false);
