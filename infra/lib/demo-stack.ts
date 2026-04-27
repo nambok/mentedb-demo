@@ -170,7 +170,9 @@ export class DemoStack extends cdk.Stack {
       },
       additionalBehaviors: {
         "/api/*": {
-          origin: new origins.FunctionUrlOrigin(fnUrl),
+          origin: new origins.FunctionUrlOrigin(fnUrl, {
+            readTimeout: cdk.Duration.seconds(60),
+          }),
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
