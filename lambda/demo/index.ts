@@ -632,20 +632,26 @@ async function handleSeed(
 
   const project = `demo-${session_id}`;
 
-  // Seed all memories in parallel for fast load
-  const results = await Promise.allSettled(
-    memories.map((mem) =>
-      mentedbToolCall(secrets, "store_memory", {
-        content: mem.content,
-        memory_type: mem.memory_type,
-        tags: [...mem.tags, `project:${project}`],
-      })
-    )
-  );
-  const seeded = results.filter((r) => r.status === "fulfilled").length;
-  for (const r of results) {
-    if (r.status === "rejected") {
-      console.error(`Failed to seed memory:`, r.reason);
+  // Seed memories in small batches to avoid MenteDB lock contention
+  // (parallel calls for same user cause file-lock conflicts on EFS)
+  const BATCH_SIZE = 3;
+  let seeded = 0;
+  for (let i = 0; i < memories.length; i += BATCH_SIZE) {
+    const batch = memories.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((mem) =>
+        mentedbToolCall(secrets, "store_memory", {
+          content: mem.content,
+          memory_type: mem.memory_type,
+          tags: [...mem.tags, `project:${project}`],
+        })
+      )
+    );
+    seeded += results.filter((r) => r.status === "fulfilled").length;
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error(`Failed to seed memory:`, r.reason);
+      }
     }
   }
 
