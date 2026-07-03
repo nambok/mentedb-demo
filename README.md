@@ -6,7 +6,7 @@ Interactive demo for [MenteDB](https://mentedb.com) — experience AI memory in 
 
 ## What is this?
 
-A side-by-side chat comparison: one AI with MenteDB memory, one without. Same model (Claude Haiku), same prompt — the only difference is persistent memory.
+A side-by-side chat comparison: one AI with MenteDB memory, one without. Same model (Amazon Nova Lite via Bedrock), same prompt — the only difference is persistent memory.
 
 ## Features
 
