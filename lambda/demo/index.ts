@@ -627,16 +627,22 @@ async function handleSeed(
 
   const project = `demo-${session_id}`;
 
-  const results = await Promise.allSettled(
-    memories.map((mem) =>
-      mentedbToolCall(secrets, "store_memory", {
+  // One batched call: the per user write lock serialized individual stores
+  // server side, so eight parallel store_memory calls took about 18 seconds.
+  let seeded = 0;
+  try {
+    const result = (await mentedbToolCall(secrets, "store_memories", {
+      memories: memories.map((mem) => ({
         content: mem.content,
         memory_type: mem.memory_type,
         tags: [...mem.tags, `project:${project}`],
-      })
-    )
-  );
-  const seeded = results.filter((r) => r.status === "fulfilled").length;
+      })),
+    })) as { stored?: number };
+    seeded = result.stored ?? memories.length;
+  } catch (err) {
+    console.error("Batch seed failed:", err);
+  }
+  const results: PromiseSettledResult<unknown>[] = [];
   results
     .filter((r) => r.status === "rejected")
     .forEach((r) => console.error("Failed to seed memory:", (r as PromiseRejectedResult).reason));
