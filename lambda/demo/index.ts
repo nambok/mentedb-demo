@@ -331,10 +331,16 @@ async function handleChat(
       stored?: number;
     } = {};
 
+    // Trailing-turn pattern: this call stores the previous exchange (last
+    // user message pairs with the assistant reply it produced) and recalls
+    // context for the new message. One process_turn per turn, half the
+    // latency and storage of the old call-before-and-after design.
+    const prevAssistantMsg =
+      [...messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
     try {
       turnResult = (await mentedbToolCall(secrets, "process_turn", {
         user_message: lastUserMsg,
-        assistant_response: "",
+        assistant_response: prevAssistantMsg.slice(0, 500),
         turn_id: turnId,
         project_context: `demo-${session_id}`,
       })) as typeof turnResult;
@@ -422,17 +428,6 @@ async function handleChat(
     systemPrompt,
     messages
   );
-
-  // 4. For with_memory mode, store assistant response context
-  if (mode === "with_memory") {
-    // Fire-and-forget: store the assistant response for the turn
-    mentedbToolCall(secrets, "process_turn", {
-      user_message: lastUserMsg,
-      assistant_response: responseText.slice(0, 500),
-      turn_id: turnId,
-      project_context: `demo-${session_id}`,
-    }).catch(() => {});
-  }
 
   return respond(200, {
     response: responseText,
