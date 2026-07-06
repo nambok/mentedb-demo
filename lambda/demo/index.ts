@@ -195,6 +195,22 @@ async function checkRateLimit(ip: string): Promise<boolean> {
 // MenteDB helpers
 // ---------------------------------------------------------------------------
 
+import { createHash } from "crypto";
+
+// Deterministic agent id per demo session: with agent scoped retrieval on
+// the platform, each browser session only recalls its own memories plus
+// shared ones, so visitors stop seeing each other's test data.
+function agentIdFor(sessionId: string): string {
+  const h = createHash("sha1").update(`mentedb-demo:${sessionId}`).digest("hex");
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    "5" + h.slice(13, 16),
+    ((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0") + h.slice(18, 20),
+    h.slice(20, 32),
+  ].join("-");
+}
+
 async function mentedbToolCall(
   secrets: Secrets,
   toolName: string,
@@ -343,6 +359,7 @@ async function handleChat(
         assistant_response: prevAssistantMsg.slice(0, 500),
         turn_id: turnId,
         project_context: `demo-${session_id}`,
+        agent_id: agentIdFor(session_id),
       })) as typeof turnResult;
     } catch (err) {
       console.error("process_turn failed, falling back to no-memory mode:", err);
@@ -364,7 +381,8 @@ async function handleChat(
         memories: [{ summary: content.slice(0, 200) }],
       };
     });
-    detectedActions = Array.isArray(turnResult.detected_actions) ? turnResult.detected_actions : [];
+    detectedActions = (Array.isArray(turnResult.detected_actions) ? turnResult.detected_actions : [])
+      .filter((a) => a.type && a.type.trim().length > 0);
     if (contradictions.length > 0) {
       contradictionDetected = {
         old: contradictions[0].old_content,
@@ -632,6 +650,7 @@ async function handleSeed(
   let seeded = 0;
   try {
     const result = (await mentedbToolCall(secrets, "store_memories", {
+      agent_id: agentIdFor(session_id),
       memories: memories.map((mem) => ({
         content: mem.content,
         memory_type: mem.memory_type,
