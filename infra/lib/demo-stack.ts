@@ -10,6 +10,8 @@ import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as path from "path";
 import { Construct } from "constructs";
 
@@ -98,6 +100,15 @@ export class DemoStack extends cdk.Stack {
 
     apiSecrets.grantRead(demoFn);
     rateLimitTable.grantReadWriteData(demoFn);
+
+    // Retention cleanup: the demo account holds only ephemeral showcase data,
+    // so trim anything past the retention window every hour. Without this it
+    // accumulates duplicate pinned memories that flood every session's recall.
+    new events.Rule(this, "DemoCleanupSchedule", {
+      ruleName: `${prefix}-demo-cleanup`,
+      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+      targets: [new targets.LambdaFunction(demoFn)],
+    });
 
     // Grant Bedrock invoke permission (Amazon Nova Lite — no marketplace subscription needed)
     demoFn.addToRolePolicy(

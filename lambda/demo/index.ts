@@ -687,9 +687,74 @@ async function handleSeed(
 // Main Lambda handler
 // ---------------------------------------------------------------------------
 
+// Demo memories are ephemeral showcase data. Anything older than the retention
+// window is trimmed on a schedule so the account can never accumulate into a
+// recall flood (the pinned/nil-owned pile that made the demo show 40+ duplicate
+// ALWAYS memories). Longer than any real session, so active visitors are never
+// disrupted.
+const RETENTION_HOURS = 3;
+const CLEANUP_MAX_PER_RUN = 3000;
+
+async function runDemoCleanup(secrets: Secrets): Promise<number> {
+  const cutoffMicros = (Date.now() - RETENTION_HOURS * 3600 * 1000) * 1000;
+  const toDelete: string[] = [];
+  let cursor = "";
+  for (let i = 0; i < 80 && toDelete.length < CLEANUP_MAX_PER_RUN; i++) {
+    const url = `${secrets.MENTEDB_API_URL}/api/memories?limit=100${
+      cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
+    }`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${secrets.MENTEDB_API_KEY}` },
+    });
+    if (!resp.ok) break;
+    const data = (await resp.json()) as {
+      memories?: Array<{ memory_id: string; created_at: string }>;
+      next_cursor?: string;
+    };
+    const mems = data.memories ?? [];
+    if (!mems.length) break;
+    for (const m of mems) {
+      if (Number(m.created_at) < cutoffMicros) toDelete.push(m.memory_id);
+    }
+    cursor = data.next_cursor ?? "";
+    if (!cursor) break;
+  }
+  let deleted = 0;
+  const concurrency = 10;
+  for (let i = 0; i < toDelete.length; i += concurrency) {
+    const batch = toDelete.slice(i, i + concurrency);
+    await Promise.all(
+      batch.map(async (id) => {
+        try {
+          await mentedbToolCall(secrets, "forget_memory", {
+            id,
+            reason: "demo retention cleanup",
+          });
+          deleted++;
+        } catch {
+          // best effort; the next scheduled run retries the rest
+        }
+      })
+    );
+  }
+  return deleted;
+}
+
 export const handler = async (
   event: LambdaFunctionUrlEvent
 ): Promise<LambdaResponse> => {
+  // Scheduled EventBridge trigger: run retention cleanup, not an HTTP request.
+  if ((event as unknown as { source?: string }).source === "aws.events") {
+    try {
+      const secrets = await getSecrets();
+      const deleted = await runDemoCleanup(secrets);
+      console.log(`demo cleanup: forgot ${deleted} memories past retention`);
+    } catch (err) {
+      console.error("demo cleanup failed:", err);
+    }
+    return { statusCode: 200, headers: {}, body: "cleanup complete" };
+  }
+
   const method = event.requestContext.http.method;
   const path = event.requestContext.http.path;
   const origin = event.headers?.["origin"] ?? event.headers?.["Origin"];
