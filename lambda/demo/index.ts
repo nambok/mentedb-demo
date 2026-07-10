@@ -666,12 +666,16 @@ async function handleSeed(
     .filter((r) => r.status === "rejected")
     .forEach((r) => console.error("Failed to seed memory:", (r as PromiseRejectedResult).reason));
 
-  // Fire-and-forget process_turn so it doesn't block the response
+  // Fire-and-forget process_turn so it doesn't block the response. Must carry
+  // agent_id: without it the turn is stored nil-owned, which is globally
+  // visible to every session and leaks across the demo's per-session
+  // isolation (a fresh visitor would recall this seed turn).
   mentedbToolCall(secrets, "process_turn", {
     user_message: `[system] Persona initialized: ${persona}`,
     assistant_response: "",
     turn_id: 0,
     project_context: project,
+    agent_id: agentIdFor(session_id),
   }).catch((err) => console.error("process_turn for seed project failed:", err));
 
   return respond(200, { ok: true, seeded, memories: memories.map((m, i) => ({
