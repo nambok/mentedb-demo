@@ -311,6 +311,22 @@ async function callBedrock(
 // Route handlers
 // ---------------------------------------------------------------------------
 
+// Recall can surface several near-identical episodic turns (the demo gets
+// replayed on the same session, and cleanup is capped), which made the activity
+// feed show the same memory many times over. Collapse by trimmed content so the
+// feed and the prompt show each memory once.
+function dedupeByContent<T extends { content?: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = (item.content ?? "").trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 async function handleChat(
   body: ChatRequest,
   secrets: Secrets
@@ -365,10 +381,10 @@ async function handleChat(
       console.error("process_turn failed, falling back to no-memory mode:", err);
     }
 
-    memoriesUsed = Array.isArray(turnResult.context) ? turnResult.context : [];
+    memoriesUsed = dedupeByContent(Array.isArray(turnResult.context) ? turnResult.context : []);
     const contradictions = Array.isArray(turnResult.contradiction_details) ? turnResult.contradiction_details : [];
     painWarnings = Array.isArray(turnResult.pain_warnings) ? turnResult.pain_warnings : [];
-    memoriesStored = Array.isArray(turnResult.memories_stored) ? turnResult.memories_stored : [];
+    memoriesStored = dedupeByContent(Array.isArray(turnResult.memories_stored) ? turnResult.memories_stored : []);
     // MenteDB returns { action_type, content, memory_id, relevance } — map to frontend shape
     const rawRecalls = Array.isArray(turnResult.proactive_recalls) ? turnResult.proactive_recalls : [];
     proactiveRecalls = rawRecalls.map((r: { action_type?: string; content?: string; memory_id?: string; relevance?: number; trigger?: string; reason?: string; memories?: Array<{ summary: string }> }) => {
