@@ -9,7 +9,7 @@ import { sendChat, resetSession, seedPersona, type Memory } from '../lib/api';
 import { personaScenarios } from '../data/scenarios';
 
 export default function Chat() {
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [mode, setMode] = useState<'free' | 'guided'>('guided');
   const [selectedPersona, setSelectedPersona] = useState('developer');
   const [scenarioStep, setScenarioStep] = useState(0);
@@ -153,7 +153,11 @@ export default function Chat() {
   }, [sessionNumber, mode]);
 
   const handleReset = useCallback(async () => {
-    await resetSession(sessionId).catch(() => {});
+    // Clean up the old session server-side, then switch to a fresh session so
+    // replays never accumulate duplicate memories on the same agent scope.
+    resetSession(sessionId).catch(() => {});
+    const freshSession = crypto.randomUUID();
+    setSessionId(freshSession);
     setMessages([]);
     setMemoriesUsed([]);
     setMemoriesStored([]);
@@ -168,7 +172,7 @@ export default function Chat() {
     setSessionNumber(1);
     setSeededMemories([]);
     if (selectedPersona !== 'fresh') {
-      const mems = await seedPersona(sessionId, selectedPersona).catch(() => [] as Memory[]);
+      const mems = await seedPersona(freshSession, selectedPersona).catch(() => [] as Memory[]);
       setSeededMemories(mems);
       setTotalMemories(mems.length);
       if (mems.length > 0) {
@@ -190,9 +194,12 @@ export default function Chat() {
     setTurnCount(0);
     setSessionNumber(1);
     setSeededMemories([]);
-    await resetSession(sessionId).catch(() => {});
+    // Fresh session per persona so switching never mixes or accumulates scopes.
+    resetSession(sessionId).catch(() => {});
+    const freshSession = crypto.randomUUID();
+    setSessionId(freshSession);
     if (id !== 'fresh') {
-      const mems = await seedPersona(sessionId, id).catch(() => [] as Memory[]);
+      const mems = await seedPersona(freshSession, id).catch(() => [] as Memory[]);
       setSeededMemories(mems);
       setTotalMemories(mems.length);
       if (mems.length > 0) {
