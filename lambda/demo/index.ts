@@ -327,6 +327,55 @@ function dedupeByContent<T extends { content?: string }>(items: T[]): T[] {
   return out;
 }
 
+// Significant words of a fact, dropping filler so paraphrases of the same thing
+// share a token set. "User is building a SaaS app called TaskPilot..." and
+// "TaskPilot is a SaaS app being built..." both reduce to {taskpilot, saas, ...}.
+function significantTokens(s: string): Set<string> {
+  const stop = new Set([
+    "user", "is", "are", "was", "the", "a", "an", "of", "to", "for", "with",
+    "and", "as", "in", "on", "at", "by", "building", "build", "built", "builds",
+    "being", "use", "uses", "using", "used", "prefer", "prefers", "preferred",
+    "app", "called", "their", "them", "they", "primary", "that", "this", "over",
+    "due", "its", "has", "have", "stack", "tech",
+  ]);
+  return new Set(
+    (s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 1 && !stop.has(t))
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+// Collapse near-duplicate facts (paraphrases) that exact-content dedupe misses,
+// by significant-token overlap. Keeps the first of each near-duplicate cluster
+// so the feed shows one memory per fact instead of five phrasings of it.
+function dedupeSimilar<T extends { content?: string; summary?: string }>(
+  items: T[],
+  threshold = 0.5
+): T[] {
+  const kept: Array<{ item: T; tokens: Set<string> }> = [];
+  for (const item of items) {
+    const tokens = significantTokens(item.content ?? item.summary ?? "");
+    if (!tokens.size) {
+      kept.push({ item, tokens });
+      continue;
+    }
+    if (kept.some((k) => k.tokens.size > 0 && jaccard(k.tokens, tokens) >= threshold)) {
+      continue;
+    }
+    kept.push({ item, tokens });
+  }
+  return kept.map((k) => k.item);
+}
+
 async function handleChat(
   body: ChatRequest,
   secrets: Secrets
@@ -384,17 +433,23 @@ async function handleChat(
     memoriesUsed = dedupeByContent(Array.isArray(turnResult.context) ? turnResult.context : []);
     const contradictions = Array.isArray(turnResult.contradiction_details) ? turnResult.contradiction_details : [];
     painWarnings = Array.isArray(turnResult.pain_warnings) ? turnResult.pain_warnings : [];
-    memoriesStored = dedupeByContent(Array.isArray(turnResult.memories_stored) ? turnResult.memories_stored : []);
+    memoriesStored = dedupeSimilar(
+      dedupeByContent(Array.isArray(turnResult.memories_stored) ? turnResult.memories_stored : [])
+    );
     // MenteDB returns { action_type, content, memory_id, relevance } — map to frontend shape
-    const rawRecalls = Array.isArray(turnResult.proactive_recalls) ? turnResult.proactive_recalls : [];
+    // Collapse near-duplicate recalls so the same fact is not surfaced several
+    // times, then map. The reason is a trigger label, not the fact itself, so the
+    // fact shows once as the bullet instead of twice (header + bullet).
+    const rawRecalls = dedupeSimilar(
+      Array.isArray(turnResult.proactive_recalls) ? turnResult.proactive_recalls : []
+    );
     proactiveRecalls = rawRecalls.map((r: { action_type?: string; content?: string; memory_id?: string; relevance?: number; trigger?: string; reason?: string; memories?: Array<{ summary: string }> }) => {
       if (r.trigger && r.reason) return r as { trigger: string; reason: string; memories: Array<{ summary: string }> };
-      const content = r.content ?? '';
-      const firstLine = content.split('\n')[0].replace(/^User:\s*/, '').slice(0, 120);
+      const fact = (r.content ?? '').split('\n')[0].replace(/^User:\s*/, '').slice(0, 200);
       return {
         trigger: r.action_type ?? 'recall',
-        reason: firstLine || 'Related memory',
-        memories: [{ summary: content.slice(0, 200) }],
+        reason: 'Recalled for this reply',
+        memories: [{ summary: fact }],
       };
     });
     detectedActions = (Array.isArray(turnResult.detected_actions) ? turnResult.detected_actions : [])
