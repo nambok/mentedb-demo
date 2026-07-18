@@ -8,6 +8,8 @@ interface MemoryFeedProps {
   painWarnings: Array<{ signal_id?: string; description?: string; intensity?: number }>;
   proactiveRecalls: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
   detectedActions: Array<{ type: string; detail: string }>;
+  interference: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+  streamAlerts: Array<{ kind: string; ai_said?: string; stored?: string; summary?: string; old?: string; new?: string }>;
   totalMemories: number;
   avgHealth: number;
   onViewMemories?: () => void;
@@ -20,11 +22,13 @@ export default function MemoryFeed({
   painWarnings,
   proactiveRecalls,
   detectedActions,
+  interference,
+  streamAlerts,
   totalMemories,
   avgHealth,
   onViewMemories,
 }: MemoryFeedProps) {
-  const hasActivity = memoriesUsed.length > 0 || memoriesStored.length > 0 || contradiction || painWarnings.length > 0 || proactiveRecalls.length > 0 || detectedActions.length > 0;
+  const hasActivity = memoriesUsed.length > 0 || memoriesStored.length > 0 || contradiction || painWarnings.length > 0 || proactiveRecalls.length > 0 || detectedActions.length > 0 || interference.length > 0 || streamAlerts.length > 0;
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-zinc-800 bg-zinc-900/80 overflow-hidden">
@@ -199,6 +203,73 @@ export default function MemoryFeed({
                   className="text-xs bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-3 py-2 text-cyan-300"
                 >
                   <span className="font-medium">{a.type}</span>: {a.detail}
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {interference.length > 0 && (
+            <motion.div
+              key="interference"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-amber-400">
+                <Zap size={12} />
+                INTERFERENCE
+              </div>
+              {interference.map((p, i) => (
+                <motion.div
+                  key={`interference-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-300"
+                >
+                  <div className="text-amber-400/80 mb-0.5">
+                    Two memories compete ({Math.round(p.similarity * 100)}% similar)
+                  </div>
+                  <div className="text-zinc-400">{p.disambiguation}</div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {streamAlerts.length > 0 && (
+            <motion.div
+              key="stream"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-indigo-400">
+                <Brain size={12} />
+                RESPONSE CHECK
+              </div>
+              {streamAlerts.map((s, i) => (
+                <motion.div
+                  key={`stream-${i}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="text-xs bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-indigo-300"
+                >
+                  <span className="font-medium uppercase text-indigo-400/80">{s.kind}</span>
+                  {s.kind === 'correction' && s.old && s.new && (
+                    <span className="text-zinc-400"> — "{s.old}" → "{s.new}"</span>
+                  )}
+                  {s.kind === 'contradiction' && s.stored && (
+                    <span className="text-zinc-400"> — reply diverges from "{s.stored}"</span>
+                  )}
+                  {s.kind === 'forgotten' && s.summary && (
+                    <span className="text-zinc-400"> — {s.summary}</span>
+                  )}
+                  {s.kind === 'reinforcement' && (
+                    <span className="text-zinc-400"> — reply reaffirms a stored fact</span>
+                  )}
                 </motion.div>
               ))}
             </motion.div>
