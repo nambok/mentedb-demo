@@ -396,6 +396,8 @@ async function handleChat(
   let painWarnings: Array<{ signal_id?: string; description?: string; intensity?: number }> = [];
   let proactiveRecalls: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }> = [];
   let detectedActions: Array<{ type: string; detail: string }> = [];
+  let interference: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }> = [];
+  let streamAlerts: Array<{ kind: string; ai_said?: string; stored?: string; summary?: string; old?: string; new?: string }> = [];
   let systemPrompt: string;
 
   if (mode === "with_memory") {
@@ -409,6 +411,8 @@ async function handleChat(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       proactive_recalls?: Array<any>;
       detected_actions?: Array<{ type: string; detail: string }>;
+      interference?: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+      stream_alerts?: Array<{ kind: string; ai_said?: string; stored?: string; summary?: string; old?: string; new?: string }>;
       stored?: number;
     } = {};
 
@@ -454,6 +458,11 @@ async function handleChat(
     });
     detectedActions = (Array.isArray(turnResult.detected_actions) ? turnResult.detected_actions : [])
       .filter((a) => a.type && a.type.trim().length > 0);
+    // Two cognitive signals the pipeline already returns but the demo dropped:
+    // interference (retrieved memories that compete, with disambiguation) and
+    // stream alerts (where the assistant's reply contradicts/corrects a stored fact).
+    interference = Array.isArray(turnResult.interference) ? turnResult.interference : [];
+    streamAlerts = Array.isArray(turnResult.stream_alerts) ? turnResult.stream_alerts : [];
     if (contradictions.length > 0) {
       contradictionDetected = {
         old: contradictions[0].old_content,
@@ -539,6 +548,8 @@ async function handleChat(
     pain_warnings: painWarnings.map(p => typeof p === 'string' ? { description: p } : p),
     proactive_recalls: proactiveRecalls,
     detected_actions: detectedActions,
+    interference,
+    stream_alerts: streamAlerts,
     turn_id: turnId,
     mode,
   });

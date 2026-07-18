@@ -24,6 +24,8 @@ export interface ChatResponse {
   pain_warnings?: Array<{ signal_id?: string; description?: string; intensity?: number }>;
   proactive_recalls?: Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>;
   detected_actions?: Array<{ type: string; detail: string }>;
+  interference?: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+  stream_alerts?: Array<{ kind: string; ai_said?: string; stored?: string; summary?: string; old?: string; new?: string }>;
   turn_id: number;
 }
 

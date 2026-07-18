@@ -29,6 +29,8 @@ export default function Chat() {
   const [painWarnings, setPainWarnings] = useState<Array<{ signal_id?: string; description?: string; intensity?: number }>>([]);
   const [proactiveRecalls, setProactiveRecalls] = useState<Array<{ trigger: string; reason: string; memories: Array<{ summary: string }> }>>([]);
   const [detectedActions, setDetectedActions] = useState<Array<{ type: string; detail: string }>>([]);
+  const [interference, setInterference] = useState<Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>>([]);
+  const [streamAlerts, setStreamAlerts] = useState<Array<{ kind: string; ai_said?: string; stored?: string; summary?: string; old?: string; new?: string }>>([]);
   const [totalMemories, setTotalMemories] = useState(0);
   const [avgHealth, setAvgHealth] = useState(0);
   const [modelName, setModelName] = useState<string>('Amazon Nova Lite');
@@ -108,6 +110,8 @@ export default function Chat() {
         setPainWarnings(r.pain_warnings || []);
         setProactiveRecalls(r.proactive_recalls || []);
         setDetectedActions(r.detected_actions || []);
+        setInterference(r.interference || []);
+        setStreamAlerts(r.stream_alerts || []);
         if (r.model) setModelName(r.model);
       } else {
         assistantContent = 'Something went wrong — please try again.';
@@ -277,6 +281,8 @@ export default function Chat() {
             painWarnings={painWarnings}
             proactiveRecalls={proactiveRecalls}
             detectedActions={detectedActions}
+            interference={interference}
+            streamAlerts={streamAlerts}
             totalMemories={totalMemories}
             avgHealth={avgHealth}
             onViewMemories={() => setDrawerOpen(true)}
