@@ -3,17 +3,21 @@ import { Link } from 'react-router-dom'
 import ForceGraph2D from 'react-force-graph-2d'
 import type { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { ArrowLeft, CornerDownLeft, RotateCcw, Sparkles, AlertTriangle, Zap } from 'lucide-react'
-import { explore, seedPersona, type ExploreResponse } from '../lib/api'
+import { ArrowLeft, CornerDownLeft, AlertTriangle, Users } from 'lucide-react'
+import { explore, type ExploreResponse } from '../lib/api'
 
 // ---------------------------------------------------------------------------
-// Graph Explorer: type anything, watch the engine break it into facts, weave
-// them into a living knowledge graph, and pull related memories back out.
-// The choreography runs while the real engine call is in flight, so the
-// pipeline animation doubles as the loading state.
+// Graph Explorer: one SHARED living knowledge graph. Anyone's text flows
+// through the real engine; extraction is asynchronous, so the choreography is
+// recall first (camera dives into what the graph already knows), then a
+// consolidation watch that births the new facts as the engine weaves them in.
+// Other visitors' memories arrive live through the same ambient poll.
 // ---------------------------------------------------------------------------
 
-type Stage = 'boot' | 'idle' | 'tokenize' | 'extract' | 'inject' | 'relate' | 'recall'
+// Everyone explores the same space; the platform's nightly cleanup resets it.
+const SHARED_SESSION = 'graph-shared-v1'
+
+type Stage = 'boot' | 'idle' | 'tokenize' | 'extract' | 'recall' | 'consolidate'
 
 interface GNode extends NodeObject {
   id: string
@@ -40,13 +44,12 @@ const SUGGESTIONS = [
 ]
 
 const STAGE_LABEL: Record<Stage, string> = {
-  boot: 'Waking the engine',
+  boot: 'Waking the shared graph',
   idle: '',
   tokenize: 'Parsing your words',
-  extract: 'Extracting atomic facts',
-  inject: 'Writing to memory',
-  relate: 'Linking related memories',
-  recall: 'Recalling what connects',
+  extract: 'Reading it, recalling what connects',
+  recall: 'This is what it remembers',
+  consolidate: 'Weaving your words into the graph',
 }
 
 const EDGE_COLORS: Record<string, string> = {
@@ -54,44 +57,52 @@ const EDGE_COLORS: Record<string, string> = {
   supersedes: 'rgba(251,191,36,0.5)',
 }
 
-function sessionIdInit(): string {
-  const saved = localStorage.getItem('mentedb-graph-session')
-  if (saved) return saved
-  const id = `graph-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-  localStorage.setItem('mentedb-graph-session', id)
-  return id
-}
-
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const linkKey = (s: string, t: string, type: string) => `${s}|${t}|${type}`
 const endpointId = (e: string | GNode) => (typeof e === 'string' ? e : e.id)
 const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+
+function Logo({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <line x1="16" y1="6" x2="8" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <line x1="16" y1="6" x2="24" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <line x1="8" y1="22" x2="24" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="16" cy="6" r="3.5" fill="#34d399" />
+      <circle cx="8" cy="22" r="3.5" fill="#34d399" />
+      <circle cx="24" cy="22" r="3.5" fill="#34d399" />
+      <circle cx="16" cy="6" r="1.5" fill="#0a0a0a" />
+      <circle cx="8" cy="22" r="1.5" fill="#0a0a0a" />
+      <circle cx="24" cy="22" r="1.5" fill="#0a0a0a" />
+    </svg>
+  )
+}
 
 export default function GraphExplorer() {
   const reduced = useReducedMotion()
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined)
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
 
-  const [session, setSession] = useState(sessionIdInit)
   const [stage, setStage] = useState<Stage>('boot')
+  const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
   const [tokens, setTokens] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<ExploreResponse | null>(null)
+  const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null)
+  const [arrivals, setArrivals] = useState(0)
   const busyRef = useRef(false)
   const turnRef = useRef(1)
+  const submitTokenRef = useRef(0)
+  const fontReadyRef = useRef(false)
 
-  // The live graph object: node/link object identity is preserved across
-  // updates so the simulation keeps positions; arrays are re-created to
-  // trigger the diff.
   const dataRef = useRef<{ nodes: GNode[]; links: GLink[] }>({ nodes: [], links: [] })
   const [graphData, setGraphData] = useState(dataRef.current)
 
-  // Per-frame paint state lives in refs so the canvas never forces a re-render.
+  // Per-frame paint state in refs: the canvas loop never triggers re-renders.
   const paintRef = useRef({
-    fresh: new Map<string, number>(), // id -> bornAt ms
+    fresh: new Map<string, number>(),
     recalled: new Set<string>(),
-    pulses: new Map<string, number>(), // id -> pulse start ms
+    pulses: new Map<string, number>(),
     activeEdges: new Set<string>(),
     spotlight: false,
     degree: new Map<string, number>(),
@@ -101,6 +112,9 @@ export default function GraphExplorer() {
   useEffect(() => {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
     window.addEventListener('resize', onResize)
+    document.fonts?.ready.then(() => {
+      fontReadyRef.current = true
+    })
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
@@ -113,15 +127,20 @@ export default function GraphExplorer() {
     paintRef.current.degree = deg
   }, [])
 
-  /** Merge an explore response into the live graph, preserving existing node
-   *  objects (and so their positions). Returns the ids of newly added nodes
-   *  and the newly added link objects. */
+  /** Merge a response into the live graph without ever wiping it: existing
+   *  node objects (and their positions) are preserved; an empty or failed
+   *  listing never clears what is already on screen. */
   const mergeGraph = useCallback(
-    (res: ExploreResponse, placeAt?: { x: number; y: number }) => {
+    (res: Pick<ExploreResponse, 'nodes' | 'edges'>, placeAt?: { x: number; y: number }) => {
       const existing = new Map(dataRef.current.nodes.map((n) => [n.id, n]))
+      if (res.nodes.length === 0 && existing.size > 0) {
+        return { added: [] as string[], addedLinks: [] as GLink[] }
+      }
       const nodes: GNode[] = []
+      const seen = new Set<string>()
       const added: string[] = []
       for (const n of res.nodes) {
+        seen.add(n.id)
         const prev = existing.get(n.id)
         if (prev) {
           nodes.push(prev)
@@ -135,15 +154,15 @@ export default function GraphExplorer() {
           added.push(n.id)
         }
       }
+      // Keep nodes the listing may have paged out rather than dropping them.
+      for (const [id, n] of existing) if (!seen.has(id)) nodes.push(n)
+
       const prevLinks = new Map(dataRef.current.links.map((l) => [l.key, l]))
-      const links: GLink[] = []
+      const links: GLink[] = [...prevLinks.values()]
       const addedLinks: GLink[] = []
       for (const e of res.edges) {
         const key = linkKey(e.source, e.target, e.type)
-        const prev = prevLinks.get(key)
-        if (prev) {
-          links.push(prev)
-        } else {
+        if (!prevLinks.has(key)) {
           const l: GLink = { source: e.source, target: e.target, type: e.type, key }
           links.push(l)
           addedLinks.push(l)
@@ -157,25 +176,30 @@ export default function GraphExplorer() {
     [recomputeDegrees],
   )
 
-  // Boot: seed the session once so arbitrary text has something to relate to,
-  // then load the ambient graph.
+  const safeZoomToFit = useCallback((ms: number, pad: number, filter?: (n: GNode) => boolean) => {
+    try {
+      const nodes = dataRef.current.nodes.filter((n) => n.x !== undefined)
+      if (nodes.length === 0) return
+      if (filter && !nodes.some(filter)) return
+      fgRef.current?.zoomToFit(ms, pad, filter as ((n: NodeObject) => boolean) | undefined)
+    } catch {
+      /* camera moves must never take the page down */
+    }
+  }, [])
+
+  // Boot: load the shared graph (the lambda self-seeds it when empty).
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const seededKey = `mentedb-graph-seeded-${session}`
-        if (!localStorage.getItem(seededKey)) {
-          await seedPersona(session, 'developer')
-          localStorage.setItem(seededKey, '1')
-        }
-        const res = await explore(session, '', 0)
+        const res = await explore(SHARED_SESSION, '', 0)
         if (cancelled) return
         mergeGraph(res)
         setStage('idle')
-        setTimeout(() => fgRef.current?.zoomToFit(800, 90), 600)
+        setTimeout(() => safeZoomToFit(900, 90), 700)
       } catch {
         if (!cancelled) {
-          setError('The demo engine is waking up. Try again in a moment.')
+          setError('The engine is waking up. Type something to retry.')
           setStage('idle')
         }
       }
@@ -183,16 +207,79 @@ export default function GraphExplorer() {
     return () => {
       cancelled = true
     }
-  }, [session, mergeGraph])
+  }, [mergeGraph, safeZoomToFit])
+
+  // Ambient live poll: other explorers' memories drift in while you watch.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      if (busyRef.current || document.hidden || stage === 'boot') return
+      try {
+        const res = await explore(SHARED_SESSION, '', 0)
+        const before = dataRef.current.nodes.length
+        const { added } = mergeGraph(res)
+        if (added.length > 0 && before > 0) {
+          const now = performance.now()
+          for (const id of added) {
+            paintRef.current.fresh.set(id, now)
+            paintRef.current.pulses.set(id, now)
+          }
+          fgRef.current?.d3ReheatSimulation()
+          setArrivals((a) => a + added.length)
+          setTimeout(() => setArrivals(0), 5000)
+        }
+      } catch {
+        /* ambient polls fail silently */
+      }
+    }, 6000)
+    return () => clearInterval(id)
+  }, [mergeGraph, stage])
+
+  /** Watch the engine consolidate: extraction is asynchronous, so poll until
+   *  the new facts land as nodes, then birth them near the input. */
+  const watchConsolidation = useCallback(
+    async (token: number, drop: { x: number; y: number }) => {
+      for (let i = 0; i < 7; i++) {
+        await delay(1600)
+        if (submitTokenRef.current !== token) return
+        try {
+          const res = await explore(SHARED_SESSION, '', 0)
+          if (submitTokenRef.current !== token) return
+          const { added, addedLinks } = mergeGraph(res, drop)
+          if (added.length > 0) {
+            const now = performance.now()
+            for (const id of added) {
+              paintRef.current.fresh.set(id, now)
+              paintRef.current.pulses.set(id, now)
+            }
+            fgRef.current?.d3ReheatSimulation()
+            addedLinks.forEach((l, j) => {
+              paintRef.current.activeEdges.add(l.key)
+              if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), j * 160)
+            })
+            await delay(1400)
+            if (submitTokenRef.current !== token) return
+            safeZoomToFit(800, 120, (n) => paintRef.current.fresh.has(n.id) || paintRef.current.recalled.has(n.id))
+            break
+          }
+        } catch {
+          /* keep watching */
+        }
+      }
+      if (submitTokenRef.current === token) setStage('idle')
+    },
+    [mergeGraph, reduced, safeZoomToFit],
+  )
 
   const submit = useCallback(
     async (raw: string) => {
       const text = raw.trim()
       if (!text || busyRef.current) return
       busyRef.current = true
+      setBusy(true)
       setError(null)
-      setResult(null)
+      setContradiction(null)
       setInput('')
+      const token = ++submitTokenRef.current
 
       const paint = paintRef.current
       paint.fresh.clear()
@@ -200,96 +287,85 @@ export default function GraphExplorer() {
       paint.activeEdges.clear()
       paint.spotlight = false
 
-      // Stage: tokenize, while the real engine call runs underneath.
-      setTokens(text.split(/\s+/).slice(0, 24))
-      setStage('tokenize')
-      const pending = explore(session, text, ++turnRef.current)
-      await delay(reduced ? 80 : 900)
-
-      setStage('extract')
-      let res: ExploreResponse
       try {
-        res = await pending
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'The engine is unavailable right now.')
-        setStage('idle')
+        // Tokenize on screen while the engine call runs underneath.
+        setTokens(text.split(/\s+/).slice(0, 24))
+        setStage('tokenize')
+        const pending = explore(SHARED_SESSION, text, ++turnRef.current)
+        await delay(reduced ? 80 : 850)
+        setStage('extract')
+
+        let res: ExploreResponse
+        try {
+          res = await pending
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'The engine is unavailable right now.')
+          setStage('idle')
+          setTokens([])
+          return
+        }
         setTokens([])
+        if (res.contradiction) {
+          setContradiction(res.contradiction)
+          setTimeout(() => setContradiction(null), 8000)
+        }
+        mergeGraph(res)
+
+        // Recall: the graph itself tells the story. Recalled memories light
+        // up with labels, their edges flow, and the camera dives in.
+        setStage('recall')
+        const now = performance.now()
+        const recalledIds = res.recalled.map((r) => r.id).filter((id): id is string => !!id)
+        for (const id of recalledIds) {
+          paint.recalled.add(id)
+          paint.pulses.set(id, now)
+          for (const l of dataRef.current.links) {
+            if (endpointId(l.source) === id || endpointId(l.target) === id) {
+              paint.activeEdges.add(l.key)
+              if (!reduced) fgRef.current?.emitParticle(l)
+            }
+          }
+        }
+        paint.spotlight = recalledIds.length > 0
+        if (recalledIds.length > 0) {
+          safeZoomToFit(800, 130, (n) => paint.recalled.has(n.id))
+          // A brief camera dive into the strongest recalls, labels showing.
+          if (!reduced) {
+            await delay(950)
+            const byId = new Map(dataRef.current.nodes.map((n) => [n.id, n]))
+            for (const id of recalledIds.slice(0, 2)) {
+              if (submitTokenRef.current !== token) return
+              const n = byId.get(id)
+              if (n?.x === undefined || n.y === undefined) continue
+              try {
+                fgRef.current?.centerAt(n.x, n.y, 650)
+                fgRef.current?.zoom(2.6, 650)
+              } catch {
+                /* ignore camera failures */
+              }
+              await delay(1150)
+            }
+            safeZoomToFit(800, 130, (n) => paint.recalled.has(n.id))
+          }
+          await delay(reduced ? 200 : 900)
+        } else {
+          await delay(reduced ? 100 : 500)
+        }
+        paint.spotlight = false
+
+        // Consolidation: watch the engine weave the new facts in (async
+        // extraction), birthing nodes as they land. Input unlocks now; the
+        // watcher keeps running in the background.
+        setStage('consolidate')
+        const drop = fgRef.current?.screen2GraphCoords(size.w / 2, size.h * 0.55) ?? { x: 0, y: 0 }
+        void watchConsolidation(token, drop)
+      } finally {
         busyRef.current = false
-        return
+        setBusy(false)
       }
-      setResult(res)
-      await delay(reduced ? 80 : 1100)
-
-      // Stage: inject, new facts fly into the graph near the input bar.
-      setStage('inject')
-      setTokens([])
-      const drop = fgRef.current?.screen2GraphCoords(size.w / 2, size.h * 0.55) ?? { x: 0, y: 0 }
-      const { added, addedLinks } = mergeGraph(res, drop)
-      const now = performance.now()
-      for (const s of res.stored) {
-        if (s.id) {
-          paint.fresh.set(s.id, now)
-          paint.pulses.set(s.id, now)
-        }
-      }
-      for (const id of added) {
-        if (!paint.fresh.has(id)) paint.fresh.set(id, now)
-      }
-      fgRef.current?.d3ReheatSimulation()
-      await delay(reduced ? 120 : 1000)
-
-      // Stage: relate, this turn's edges light up with particle bursts.
-      setStage('relate')
-      const turnEdges =
-        addedLinks.length > 0
-          ? addedLinks
-          : dataRef.current.links.filter((l) => {
-              const ids = [endpointId(l.source), endpointId(l.target)]
-              return ids.some((id) => paint.fresh.has(id))
-            })
-      turnEdges.forEach((l, i) => {
-        paint.activeEdges.add(l.key)
-        if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), i * 150)
-      })
-      await delay(reduced ? 120 : Math.min(1600, turnEdges.length * 150 + 500))
-
-      // Stage: recall, the retrieved subgraph gets the spotlight.
-      setStage('recall')
-      const t2 = performance.now()
-      for (const r of res.recalled) {
-        if (r.id) {
-          paint.recalled.add(r.id)
-          paint.pulses.set(r.id, t2)
-          const l = dataRef.current.links.filter(
-            (lk) => endpointId(lk.source) === r.id || endpointId(lk.target) === r.id,
-          )
-          l.forEach((lk) => paint.activeEdges.add(lk.key))
-        }
-      }
-      paint.spotlight = paint.recalled.size > 0 || paint.fresh.size > 0
-      if (paint.spotlight) {
-        fgRef.current?.zoomToFit(700, 110, (n) => paint.fresh.has(n.id) || paint.recalled.has(n.id))
-      }
-      await delay(reduced ? 200 : 2600)
-      paint.spotlight = false
-      setStage('idle')
-      busyRef.current = false
     },
-    [session, size, reduced, mergeGraph],
+    [reduced, size, mergeGraph, safeZoomToFit, watchConsolidation],
   )
-
-  const reset = useCallback(() => {
-    localStorage.removeItem('mentedb-graph-session')
-    const id = sessionIdInit()
-    dataRef.current = { nodes: [], links: [] }
-    setGraphData(dataRef.current)
-    paintRef.current.fresh.clear()
-    paintRef.current.recalled.clear()
-    paintRef.current.activeEdges.clear()
-    setResult(null)
-    setStage('boot')
-    setSession(id)
-  }, [])
 
   // --- canvas painting ---
 
@@ -307,7 +383,6 @@ export default function GraphExplorer() {
       const x = node.x ?? 0
       const y = node.y ?? 0
 
-      // Expanding pulse ring for just-stored and just-recalled memories.
       const pulse = paint.pulses.get(node.id)
       if (pulse !== undefined) {
         const age = (now - pulse) / 1000
@@ -322,7 +397,6 @@ export default function GraphExplorer() {
         }
       }
 
-      // Fresh nodes are born white-hot and settle to emerald over ~1.8s.
       let fill = '#8e8e96'
       if (isFresh) {
         const t = Math.min(1, (now - (born as number)) / 1800)
@@ -333,7 +407,6 @@ export default function GraphExplorer() {
       }
       if (dimmed) fill = 'rgba(82,82,91,0.30)'
 
-      // Glow only where it carries meaning: active or hovered nodes.
       if ((isFresh || isRecalled || isHover) && !reduced) {
         ctx.shadowColor = isRecalled ? '#34d399' : '#a7f3d0'
         ctx.shadowBlur = 16
@@ -344,7 +417,6 @@ export default function GraphExplorer() {
       ctx.fill()
       ctx.shadowBlur = 0
 
-      // Lit-from-within core.
       if (!dimmed) {
         ctx.beginPath()
         ctx.arc(x, y, Math.max(0.8, r * 0.33), 0, 2 * Math.PI)
@@ -352,27 +424,37 @@ export default function GraphExplorer() {
         ctx.fill()
       }
 
-      // Labels: hover and active nodes only, with a soft pill halo.
-      if ((isHover || isRecalled || (isFresh && stage !== 'idle')) && scale > 0.6) {
-        const label = truncate(node.content, 46)
-        const fontSize = 11 / scale
-        ctx.font = `${fontSize}px Inter, ui-sans-serif`
+      // Labels: recalled and fresh memories tell the story on-canvas; hover
+      // reveals the rest. Crisp only once the webfont is actually loaded.
+      const showLabel = (isHover || isRecalled || isFresh) && scale > 0.5 && fontReadyRef.current
+      if (showLabel) {
+        const label = truncate(node.content, 52)
+        const fontSize = Math.max(11, 12) / scale
+        ctx.font = `500 ${fontSize}px Inter, system-ui, -apple-system, "Segoe UI", sans-serif`
         const w = ctx.measureText(label).width
-        const pad = 4 / scale
-        ctx.fillStyle = 'rgba(9,9,11,0.85)'
-        const bx = x - w / 2 - pad
-        const by = y + r + 4 / scale
-        const bh = fontSize + pad * 2
+        const padX = 6 / scale
+        const padY = 3.5 / scale
+        const bx = x - w / 2 - padX
+        const by = y + r + 5 / scale
+        const bh = fontSize + padY * 2
+        ctx.fillStyle = 'rgba(9,9,11,0.92)'
+        ctx.strokeStyle = isRecalled ? 'rgba(52,211,153,0.35)' : 'rgba(63,63,70,0.8)'
+        ctx.lineWidth = 1 / scale
         ctx.beginPath()
-        ctx.roundRect(bx, by, w + pad * 2, bh, 3 / scale)
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(bx, by, w + padX * 2, bh, 4 / scale)
+        } else {
+          ctx.rect(bx, by, w + padX * 2, bh)
+        }
         ctx.fill()
-        ctx.fillStyle = isRecalled ? '#a7f3d0' : '#e4e4e7'
+        ctx.stroke()
+        ctx.fillStyle = isRecalled ? '#a7f3d0' : '#f4f4f5'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'top'
-        ctx.fillText(label, x, by + pad)
+        ctx.fillText(label, x, by + padY)
       }
     },
-    [reduced, stage],
+    [reduced],
   )
 
   const linkColor = useCallback((l: GLink) => {
@@ -384,7 +466,6 @@ export default function GraphExplorer() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* backdrop layers */}
       <div className="pointer-events-none absolute inset-0 bg-dotgrid" aria-hidden />
       <div
         className="pointer-events-none absolute inset-0"
@@ -425,7 +506,6 @@ export default function GraphExplorer() {
         d3VelocityDecay={0.35}
       />
 
-      {/* vignette above canvas, below UI */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{ background: 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.55))' }}
@@ -441,79 +521,62 @@ export default function GraphExplorer() {
           >
             <ArrowLeft size={15} /> Demos
           </Link>
-          <span className="hidden text-sm font-semibold sm:block">Graph Explorer</span>
+          <span className="hidden items-center gap-2 text-sm font-semibold sm:flex">
+            <Logo size={18} /> Graph Explorer
+          </span>
         </div>
-        <button
-          onClick={reset}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-1.5 text-xs text-zinc-400 backdrop-blur transition-colors hover:text-zinc-100"
-        >
-          <RotateCcw size={13} /> Fresh session
-        </button>
+        <div className="flex items-center gap-3 text-xs text-zinc-500">
+          <span className="hidden items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/70 px-3 py-1.5 backdrop-blur sm:flex">
+            <Users size={12} className="text-emerald-400" />
+            One shared graph, resets nightly
+          </span>
+          <a
+            href="https://github.com/nambok/mentedb"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-emerald-400"
+          >
+            Engine ↗
+          </a>
+        </div>
       </header>
 
-      {/* results panel */}
+      {/* contradiction alert */}
       <AnimatePresence>
-        {result && (
-          <motion.aside
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-4 top-16 hidden max-h-[70vh] w-80 overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4 backdrop-blur md:block"
+        {contradiction && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="absolute left-1/2 top-16 w-full max-w-md -translate-x-1/2 rounded-xl border border-red-500/25 bg-zinc-950/90 p-3 backdrop-blur"
           >
-            {result.contradiction && (
-              <div className="mb-3 rounded-lg border border-red-500/25 bg-red-500/[0.07] p-3">
-                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-red-400">
-                  <AlertTriangle size={13} /> Contradiction resolved
-                </div>
-                <p className="text-[11px] leading-relaxed text-zinc-400">
-                  <span className="line-through opacity-60">{truncate(result.contradiction.old, 80)}</span>
-                  <br />
-                  <span className="text-zinc-200">{truncate(result.contradiction.new, 80)}</span>
-                </p>
-              </div>
-            )}
-            {result.stored.length > 0 && (
-              <div className="mb-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                  <Sparkles size={13} /> Stored as memory
-                </div>
-                <ul className="space-y-1.5">
-                  {result.stored.map((s, i) => (
-                    <li key={i} className="rounded-lg bg-zinc-900/80 px-2.5 py-1.5 text-[11px] leading-relaxed text-zinc-300">
-                      {s.content}
-                      <span className="ml-1.5 text-[9px] uppercase tracking-wide text-zinc-600">{s.memory_type}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {result.recalled.length > 0 && (
-              <div>
-                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
-                  <Zap size={13} /> Recalled
-                </div>
-                <ul className="space-y-1.5">
-                  {result.recalled.map((r, i) => (
-                    <li key={i} className="rounded-lg bg-zinc-900/80 px-2.5 py-1.5">
-                      <p className="text-[11px] leading-relaxed text-zinc-300">{truncate(r.content, 110)}</p>
-                      <div className="mt-1 h-0.5 overflow-hidden rounded bg-zinc-800">
-                        <div
-                          className="h-full bg-emerald-500/70"
-                          style={{ width: `${Math.round(Math.min(1, Math.max(0.05, r.relevance)) * 100)}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {result.stored.length === 0 && result.recalled.length === 0 && (
-              <p className="text-xs text-zinc-500">
-                Nothing new extracted from that one. Try something with a concrete fact in it.
-              </p>
-            )}
-          </motion.aside>
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-red-400">
+              <AlertTriangle size={13} /> Contradiction detected and resolved
+            </div>
+            <p className="text-[11px] leading-relaxed text-zinc-400">
+              <span className="line-through opacity-60">{truncate(contradiction.old, 90)}</span>
+              <br />
+              <span className="text-zinc-200">{truncate(contradiction.new, 90)}</span>
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* live arrivals from other explorers */}
+      <AnimatePresence>
+        {arrivals > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute bottom-40 left-5 flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-zinc-950/85 px-3 py-1.5 text-xs text-emerald-300 backdrop-blur"
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+            {arrivals === 1 ? 'A new memory just arrived' : `${arrivals} new memories just arrived`}
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -538,7 +601,6 @@ export default function GraphExplorer() {
           )}
         </AnimatePresence>
 
-        {/* tokenized sentence during the pipeline */}
         <AnimatePresence>
           {tokens.length > 0 && (
             <motion.div
@@ -583,13 +645,12 @@ export default function GraphExplorer() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               maxLength={600}
-              placeholder="Tell it anything. Watch it remember."
+              placeholder="Tell the graph something. Watch it remember."
               className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 outline-none"
-              disabled={stage === 'boot'}
             />
             <button
               type="submit"
-              disabled={!input.trim() || busyRef.current}
+              disabled={!input.trim() || busy}
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-zinc-950 transition-colors hover:bg-emerald-400 disabled:opacity-30"
               aria-label="Send"
             >
@@ -603,7 +664,7 @@ export default function GraphExplorer() {
             <button
               key={s}
               onClick={() => submit(s)}
-              disabled={busyRef.current || stage === 'boot'}
+              disabled={busy}
               className="rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-[11px] text-zinc-400 backdrop-blur transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-40"
             >
               {s}

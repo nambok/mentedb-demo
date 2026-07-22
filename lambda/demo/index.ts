@@ -638,7 +638,7 @@ async function handleExplore(
   // With no text this is a fetch-only call: skip the turn and just return
   // the session's current graph (the explorer's initial load).
   let turn: {
-    context?: Array<{ content?: string; relevance?: number; memory_type?: string }>;
+    context?: Array<{ id?: string; content?: string; relevance_score?: number; memory_type?: string }>;
     memories_stored?: Array<{ content: string; memory_type: string }>;
     contradiction_details?: Array<{ old_content: string; new_content: string }>;
     interference?: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
@@ -659,15 +659,32 @@ async function handleExplore(
     }
   }
 
-  // 2. The session's graph after the turn: this visitor's memories only
+  // 2. The session's graph after the turn: this space's memories only
   // (agent scoped), raw turn captures excluded so the graph shows facts.
-  let nodes: GraphNode[] = [];
-  try {
+  // The shared explorer space self-seeds when found empty (first visitor
+  // after the nightly reset), so the graph always has something to relate to.
+  const listNodes = async (): Promise<GraphNode[]> => {
     const listed = (await mentedbRestGet(
       secrets,
       `/api/memories?agent_id=${agentId}&exclude_tag=turn&limit=200`
     )) as { memories?: GraphNode[] };
-    nodes = Array.isArray(listed.memories) ? listed.memories : [];
+    return Array.isArray(listed.memories) ? listed.memories : [];
+  };
+  let nodes: GraphNode[] = [];
+  try {
+    nodes = await listNodes();
+    if (nodes.length === 0 && (!text || !text.trim())) {
+      const seeds = PERSONAS["developer"] ?? [];
+      await mentedbToolCall(secrets, "store_memories", {
+        agent_id: agentId,
+        memories: seeds.map((mem) => ({
+          content: mem.content,
+          memory_type: mem.memory_type,
+          tags: [...mem.tags, `project:${project}`],
+        })),
+      });
+      nodes = await listNodes();
+    }
   } catch (err) {
     console.error("explore memory list failed:", err);
   }
@@ -675,7 +692,8 @@ async function handleExplore(
   const byContent = new Map(nodes.map((n) => [n.content.trim(), n.id]));
 
   // 3. Resolve the ids of what this turn stored and recalled, so the client
-  // can animate exactly those nodes.
+  // can animate exactly those nodes. Context items carry real memory ids and
+  // relevance_score from the engine; content matching is only the fallback.
   const storedRaw = Array.isArray(turn.memories_stored) ? turn.memories_stored : [];
   const stored = storedRaw.map((m) => ({
     content: m.content,
@@ -683,12 +701,16 @@ async function handleExplore(
     id: byContent.get(m.content.trim()) ?? null,
   }));
   const recalledRaw = dedupeByContent(
-    (Array.isArray(turn.context) ? turn.context : []) as Array<{ content: string; relevance?: number }>
+    (Array.isArray(turn.context) ? turn.context : []) as Array<{
+      id?: string;
+      content: string;
+      relevance_score?: number;
+    }>
   );
   const recalled = recalledRaw.slice(0, 8).map((m) => ({
     content: m.content,
-    relevance: m.relevance ?? 0,
-    id: byContent.get((m.content ?? "").trim()) ?? null,
+    relevance: m.relevance_score ?? 0,
+    id: (m.id && nodeIds.has(m.id) ? m.id : null) ?? byContent.get((m.content ?? "").trim()) ?? null,
   }));
 
   // 4. Typed edges around the memories this turn touched. Depth 1 per focus
