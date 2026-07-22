@@ -21,6 +21,12 @@ body {
   50% { opacity: 0; }
 }
 
+/* Blueprint dot grid used behind the demo index and the graph explorer. */
+.bg-dotgrid {
+  background-image: radial-gradient(rgba(63, 63, 70, 0.35) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
