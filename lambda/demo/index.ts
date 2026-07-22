@@ -587,9 +587,23 @@ async function handleMemories(
     params.set("limit", String(limit));
     if (cursor) params.set("cursor", cursor);
     if (search) params.set("search", search);
+    // Scope the feed to this browser session's memories, matching how they
+    // are stored; without this the feed showed every session's memories.
+    params.set("agent_id", agentIdFor(sessionId));
 
-    const result = await mentedbRestGet(secrets, `/api/memories?${params.toString()}`);
-    return respond(200, result as Record<string, unknown>);
+    const result = (await mentedbRestGet(secrets, `/api/memories?${params.toString()}`)) as {
+      memories?: Array<{ memory_id?: string; id?: string; content?: string }>;
+      [k: string]: unknown;
+    };
+    // The engine extracts near-identical paraphrases across turns; collapse
+    // them for display so the feed reads as distinct facts. Normalize the
+    // platform's memory_id to the id the frontend keys on.
+    const raw = Array.isArray(result.memories) ? result.memories : [];
+    const memories = dedupeSimilar(
+      raw.map((m) => ({ ...m, id: m.memory_id ?? m.id })),
+      0.6
+    );
+    return respond(200, { ...result, memories });
   } catch (err) {
     console.error("Memories fetch error:", err);
     return respond(500, { error: "Failed to fetch memories" });
@@ -663,12 +677,39 @@ async function handleExplore(
   // (agent scoped), raw turn captures excluded so the graph shows facts.
   // The shared explorer space self-seeds when found empty (first visitor
   // after the nightly reset), so the graph always has something to relate to.
+  // The platform lists memories with a memory_id field; normalize to the id
+  // the graph client keys nodes by, and drop anything without one. An
+  // undefined id here is what made force-graph collapse every node into one.
   const listNodes = async (): Promise<GraphNode[]> => {
     const listed = (await mentedbRestGet(
       secrets,
       `/api/memories?agent_id=${agentId}&exclude_tag=turn&limit=200`
-    )) as { memories?: GraphNode[] };
-    return Array.isArray(listed.memories) ? listed.memories : [];
+    )) as {
+      memories?: Array<{
+        memory_id?: string;
+        id?: string;
+        content?: string;
+        memory_type?: string;
+        tags?: string[];
+        health?: number;
+      }>;
+    };
+    const raw = Array.isArray(listed.memories) ? listed.memories : [];
+    const seen = new Set<string>();
+    const out: GraphNode[] = [];
+    for (const m of raw) {
+      const id = m.memory_id ?? m.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push({
+        id,
+        content: m.content ?? "",
+        memory_type: m.memory_type ?? "semantic",
+        tags: Array.isArray(m.tags) ? m.tags : [],
+        health: m.health,
+      });
+    }
+    return out;
   };
   let nodes: GraphNode[] = [];
   try {
