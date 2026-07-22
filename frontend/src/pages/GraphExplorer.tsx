@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import ForceGraph2D from 'react-force-graph-2d'
 import type { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { ArrowLeft, CornerDownLeft, AlertTriangle, Users } from 'lucide-react'
+import { ArrowLeft, CornerDownLeft, AlertTriangle, Users, Crosshair } from 'lucide-react'
 import { explore, type ExploreResponse } from '../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -118,6 +118,10 @@ export default function GraphExplorer() {
   const [arrivals, setArrivals] = useState(0)
   const [answer, setAnswer] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>(() => pickSuggestions())
+  const [focus, setFocus] = useState<{
+    content: string
+    connections: Array<{ type: string; content: string }>
+  } | null>(null)
   const busyRef = useRef(false)
   const turnRef = useRef(1)
   const submitTokenRef = useRef(0)
@@ -165,6 +169,28 @@ export default function GraphExplorer() {
       if (res.nodes.length === 0 && existing.size > 0) {
         return { added: [] as string[], addedLinks: [] as GLink[] }
       }
+      // Anchor for newcomers: near a linked neighbor when one exists (so new
+      // memories join locally), else the given drop point, else the centroid
+      // of the settled graph. Never the origin, which reads as a fly-in from
+      // nowhere.
+      const settled = dataRef.current.nodes.filter((n) => n.x !== undefined)
+      const centroid = settled.length
+        ? {
+            x: settled.reduce((s, n) => s + (n.x ?? 0), 0) / settled.length,
+            y: settled.reduce((s, n) => s + (n.y ?? 0), 0) / settled.length,
+          }
+        : { x: 0, y: 0 }
+      const anchorFor = (id: string): { x: number; y: number } => {
+        for (const e of res.edges) {
+          const other = e.source === id ? e.target : e.target === id ? e.source : null
+          if (other) {
+            const on = existing.get(other)
+            if (on?.x !== undefined && on.y !== undefined) return { x: on.x, y: on.y }
+          }
+        }
+        return placeAt ?? centroid
+      }
+
       const nodes: GNode[] = []
       const seen = new Set<string>()
       const added: string[] = []
@@ -178,10 +204,9 @@ export default function GraphExplorer() {
           nodes.push(prev)
         } else {
           const node: GNode = { id: n.id, content: n.content, memory_type: n.memory_type }
-          if (placeAt) {
-            node.x = placeAt.x + (Math.random() - 0.5) * 30
-            node.y = placeAt.y + (Math.random() - 0.5) * 20
-          }
+          const a = anchorFor(n.id)
+          node.x = a.x + (Math.random() - 0.5) * 40
+          node.y = a.y + (Math.random() - 0.5) * 30
           nodes.push(node)
           added.push(n.id)
         }
@@ -229,34 +254,75 @@ export default function GraphExplorer() {
     recomputeDegrees()
   }, [recomputeDegrees])
 
-  const safeZoomToFit = useCallback((ms: number, pad: number, filter?: (n: GNode) => boolean) => {
+  // --- Camera controller -----------------------------------------------
+  // ONE owner for all camera motion (research: Google Maps discipline).
+  // Auto-moves happen only on explicit user intent (boot, submit, click),
+  // never from background polls; the user's own pan/zoom takes sovereignty
+  // until the next explicit action or the re-center button.
+  const isProgrammaticRef = useRef(false)
+  const userOwnsCameraRef = useRef(false)
+  const K_MIN = 0.4
+  const K_MAX = 3.0
+
+  const moveCamera = useCallback((x: number, y: number, k: number, ms = 600) => {
     try {
-      const nodes = dataRef.current.nodes.filter((n) => n.x !== undefined)
-      if (nodes.length === 0) return
-      if (filter && !nodes.some(filter)) return
-      fgRef.current?.zoomToFit(ms, pad, filter as ((n: NodeObject) => boolean) | undefined)
+      isProgrammaticRef.current = true
+      fgRef.current?.centerAt(x, y, ms)
+      fgRef.current?.zoom(Math.max(K_MIN, Math.min(K_MAX, k)), ms)
     } catch {
       /* camera moves must never take the page down */
     }
   }, [])
 
-  /** Frame a set of nodes with the zoom clamped to a readable band: never so
-   *  close that one memory fills the screen, never so far the graph vanishes. */
-  const fitTo = useCallback(
-    (filter?: (n: GNode) => boolean) => {
-      safeZoomToFit(800, 120, filter)
-      setTimeout(() => {
-        try {
-          const z = fgRef.current?.zoom()
-          if (z !== undefined && z > 1.5) fgRef.current?.zoom(1.5, 300)
-          if (z !== undefined && z < 0.35) fgRef.current?.zoom(0.35, 300)
-        } catch {
-          /* ignore */
-        }
-      }, 850)
+  /** Frame a set of nodes in ONE eased move: bbox computed from current
+   *  positions, zoom clamped BEFORE animating (never fit-then-correct). */
+  const frame = useCallback(
+    (filter?: (n: GNode) => boolean, ms = 600) => {
+      try {
+        if (userOwnsCameraRef.current) return
+        const nodes = dataRef.current.nodes.filter((n) => n.x !== undefined)
+        if (nodes.length === 0) return
+        if (filter && !nodes.some(filter)) return
+        const bb = fgRef.current?.getGraphBbox(
+          filter as ((n: NodeObject) => boolean) | undefined,
+        )
+        if (!bb) return
+        const w = Math.max(1, bb.x[1] - bb.x[0])
+        const h = Math.max(1, bb.y[1] - bb.y[0])
+        const cx = (bb.x[0] + bb.x[1]) / 2
+        const cy = (bb.y[0] + bb.y[1]) / 2
+        // Fill ~75% of the viewport, clamped to the readable band.
+        const k = Math.min((size.w * 0.75) / (w + 80), (size.h * 0.75) / (h + 80))
+        moveCamera(cx, cy, k, ms)
+      } catch {
+        /* never fatal */
+      }
     },
-    [safeZoomToFit],
+    [moveCamera, size],
   )
+
+  // --- Settle controller --------------------------------------------------
+  // Mental-map preservation: before reheating, pin every settled node so only
+  // the newcomers move; unpin when the engine stops. A callback can be queued
+  // to run on settle (that is when camera framing is allowed to happen).
+  const afterSettleRef = useRef<(() => void) | null>(null)
+  const pinnedRef = useRef(false)
+
+  const settleThen = useCallback((after?: (() => void) | null, newIds?: Set<string>) => {
+    for (const n of dataRef.current.nodes) {
+      if (n.x !== undefined && !(newIds?.has(n.id))) {
+        n.fx = n.x
+        n.fy = n.y
+      }
+    }
+    pinnedRef.current = true
+    afterSettleRef.current = after ?? null
+    try {
+      fgRef.current?.d3ReheatSimulation()
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   // Boot: load the shared graph (the lambda self-seeds it when empty).
   useEffect(() => {
@@ -267,9 +333,8 @@ export default function GraphExplorer() {
         if (cancelled) return
         mergeGraph(res)
         setStage('idle')
-        // Frame the graph once positions exist; onEngineStop below re-frames
-        // when the simulation settles, so the first paint is never off-screen.
-        setTimeout(() => fitTo(), 900)
+        // No camera moves here: the first frame happens once, in onEngineStop,
+        // against settled positions.
       } catch {
         if (!cancelled) {
           setError('The engine is waking up. Type something to retry.')
@@ -280,7 +345,7 @@ export default function GraphExplorer() {
     return () => {
       cancelled = true
     }
-  }, [mergeGraph, safeZoomToFit])
+  }, [mergeGraph])
 
   // Ambient live poll: other explorers' memories drift in while you watch.
   // Paused while your own turn is animating or consolidating, so the two poll
@@ -298,7 +363,9 @@ export default function GraphExplorer() {
             paintRef.current.fresh.set(id, now)
             paintRef.current.pulses.set(id, now)
           }
-          fgRef.current?.d3ReheatSimulation()
+          // Local settle only (existing nodes pinned); background data NEVER
+          // moves the camera.
+          settleThen(null, new Set(added))
           setArrivals((a) => a + added.length)
           setTimeout(() => setArrivals(0), 5000)
         }
@@ -326,17 +393,18 @@ export default function GraphExplorer() {
               paintRef.current.fresh.set(id, now)
               paintRef.current.pulses.set(id, now)
             }
-            fgRef.current?.d3ReheatSimulation()
             addedLinks.forEach((l, j) => {
               paintRef.current.activeEdges.add(l.key)
-              if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), j * 160)
+              if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), 400 + j * 160)
             })
-            await delay(1400)
-            if (submitTokenRef.current !== token) return
-            // The real fact nodes have landed; retire the transient query node
-            // and frame the result.
+            // The real fact nodes have landed; retire the transient query
+            // node, settle locally (existing nodes pinned), and frame ONCE
+            // against settled positions, still part of the explicit turn.
             removeQueryNode()
-            fitTo((n) => paintRef.current.fresh.has(n.id) || paintRef.current.recalled.has(n.id))
+            settleThen(
+              () => frame((n) => paintRef.current.fresh.has(n.id) || paintRef.current.recalled.has(n.id)),
+              new Set(added),
+            )
             break
           }
         } catch {
@@ -350,7 +418,7 @@ export default function GraphExplorer() {
         setStage('idle')
       }
     },
-    [mergeGraph, reduced, removeQueryNode, fitTo],
+    [mergeGraph, reduced, removeQueryNode, frame, settleThen],
   )
 
   const submit = useCallback(
@@ -431,24 +499,27 @@ export default function GraphExplorer() {
           paint.pulses.set(queryId, now)
           qLinks.forEach((l, i) => {
             paint.activeEdges.add(l.key)
-            if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), 250 + i * 160)
+            if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), 600 + i * 160)
           })
-          fgRef.current?.d3ReheatSimulation()
-        }
-        for (const id of recalledIds) {
-          paint.recalled.add(id)
-          paint.pulses.set(id, now)
-          for (const l of dataRef.current.links) {
-            if (endpointId(l.source) === id || endpointId(l.target) === id) {
-              paint.activeEdges.add(l.key)
+          for (const id of recalledIds) {
+            paint.recalled.add(id)
+            paint.pulses.set(id, now)
+            for (const l of dataRef.current.links) {
+              if (endpointId(l.source) === id || endpointId(l.target) === id) {
+                paint.activeEdges.add(l.key)
+              }
             }
           }
+          paint.spotlight = recalledIds.length > 0
+          // Explicit user action: legitimately re-take the camera, then settle
+          // the query node in (everything else pinned) and frame ONCE against
+          // settled positions.
+          userOwnsCameraRef.current = false
+          settleThen(
+            () => frame((n) => paint.recalled.has(n.id) || paint.fresh.has(n.id)),
+            new Set([queryId]),
+          )
         }
-        paint.spotlight = recalledIds.length > 0
-        // One calm, clamped camera move: frame the query node plus everything
-        // it recalled, never zooming past readable (a tiny set would otherwise
-        // blow one memory up to fill the screen).
-        fitTo((n) => paint.recalled.has(n.id) || paint.fresh.has(n.id))
         await delay(reduced ? 200 : recalledIds.length > 0 ? 2600 : 1200)
         paint.spotlight = false
 
@@ -463,7 +534,7 @@ export default function GraphExplorer() {
         setBusy(false)
       }
     },
-    [reduced, size, mergeGraph, removeQueryNode, fitTo, watchConsolidation],
+    [reduced, size, mergeGraph, removeQueryNode, frame, settleThen, watchConsolidation],
   )
 
   // --- canvas painting ---
@@ -610,7 +681,8 @@ export default function GraphExplorer() {
           hoverRef.current = (n as GNode) ?? null
         }}
         onNodeClick={(n) => {
-          // Click a memory: light up its relationships and frame them.
+          // Click a memory: light up its relationships, frame them, and show
+          // HOW it connects (edge types + the connected memories).
           const node = n as GNode
           const paint = paintRef.current
           if (busyRef.current) return
@@ -618,16 +690,23 @@ export default function GraphExplorer() {
           paint.activeEdges.clear()
           paint.recalled.add(node.id)
           paint.pulses.set(node.id, performance.now())
+          const byId = new Map(dataRef.current.nodes.map((x) => [x.id, x]))
+          const connections: Array<{ type: string; content: string }> = []
           for (const l of dataRef.current.links) {
             const s = endpointId(l.source)
             const t = endpointId(l.target)
             if (s === node.id || t === node.id) {
               paint.activeEdges.add(l.key)
-              paint.recalled.add(s === node.id ? t : s)
+              const otherId = s === node.id ? t : s
+              paint.recalled.add(otherId)
+              const other = byId.get(otherId)
+              if (other) connections.push({ type: l.type, content: other.content })
             }
           }
+          setFocus({ content: node.content, connections: connections.slice(0, 6) })
           paint.spotlight = true
-          fitTo((x) => paint.recalled.has(x.id))
+          userOwnsCameraRef.current = false
+          frame((x) => paint.recalled.has(x.id))
           setTimeout(() => {
             paint.spotlight = false
           }, 2600)
@@ -637,6 +716,7 @@ export default function GraphExplorer() {
           paint.recalled.clear()
           paint.activeEdges.clear()
           paint.spotlight = false
+          setFocus(null)
         }}
         linkColor={linkColor}
         linkWidth={(l) => (paintRef.current.activeEdges.has((l as GLink).key) ? 1.4 : 0.5)}
@@ -648,17 +728,43 @@ export default function GraphExplorer() {
         linkDirectionalParticleSpeed={0.006}
         linkDirectionalParticleWidth={2.4}
         linkDirectionalParticleColor={() => '#6ee7b7'}
+        warmupTicks={100}
         cooldownTicks={200}
+        d3AlphaMin={0.02}
+        d3AlphaDecay={0.05}
+        d3VelocityDecay={0.6}
+        onZoom={() => {
+          // onZoom fires for programmatic moves too; only a genuine user
+          // gesture takes camera sovereignty.
+          if (!isProgrammaticRef.current) userOwnsCameraRef.current = true
+        }}
+        onZoomEnd={() => {
+          isProgrammaticRef.current = false
+        }}
+        onNodeDragEnd={(n) => {
+          // A node the user placed stays put.
+          const node = n as GNode
+          node.fx = node.x
+          node.fy = node.y
+        }}
         onEngineStop={() => {
-          // First settle: frame the graph so the initial view is never a
-          // tiny, seemingly empty constellation in a corner.
+          // Settled: release pinned nodes and run the queued camera frame (the
+          // only moment framing is allowed, per the settle-then-frame rule).
+          if (pinnedRef.current) {
+            pinnedRef.current = false
+            for (const n of dataRef.current.nodes) {
+              n.fx = undefined
+              n.fy = undefined
+            }
+          }
+          const after = afterSettleRef.current
+          afterSettleRef.current = null
+          if (after) after()
           if (!didFitRef.current) {
             didFitRef.current = true
-            fitTo()
+            frame(undefined, 700)
           }
         }}
-        d3AlphaDecay={0.03}
-        d3VelocityDecay={0.35}
       />
 
       <div
@@ -716,6 +822,57 @@ export default function GraphExplorer() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* how a clicked memory connects */}
+      <AnimatePresence>
+        {focus && (
+          <motion.div
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute left-4 top-16 hidden w-72 rounded-2xl border border-zinc-800 bg-zinc-950/85 p-4 backdrop-blur md:block"
+          >
+            <p className="text-xs font-medium leading-relaxed text-zinc-100">{truncate(focus.content, 90)}</p>
+            {focus.connections.length > 0 ? (
+              <ul className="mt-3 space-y-2">
+                {focus.connections.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span
+                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                        c.type === 'contradicts'
+                          ? 'bg-red-500/15 text-red-400'
+                          : c.type === 'supersedes'
+                            ? 'bg-amber-500/15 text-amber-400'
+                            : 'bg-emerald-500/10 text-emerald-400'
+                      }`}
+                    >
+                      {c.type === 'recall' ? 'recalled with' : c.type.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-[11px] leading-relaxed text-zinc-400">{truncate(c.content, 72)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-[11px] text-zinc-500">
+                No relationships yet. The engine weaves edges as related memories arrive.
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* re-center: the only thing that takes the camera back after you pan */}
+      <button
+        onClick={() => {
+          userOwnsCameraRef.current = false
+          frame(undefined, 600)
+        }}
+        className="absolute bottom-40 right-5 flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/70 px-3 py-1.5 text-xs text-zinc-400 backdrop-blur transition-colors hover:text-zinc-100"
+        aria-label="Re-center the graph"
+      >
+        <Crosshair size={13} /> Re-center
+      </button>
 
       {/* live arrivals from other explorers */}
       <AnimatePresence>

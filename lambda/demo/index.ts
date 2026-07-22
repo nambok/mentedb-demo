@@ -777,11 +777,17 @@ async function handleExplore(
     ...stored.map((s) => s.id),
     ...recalled.map((r) => r.id),
   ].filter((id): id is string => !!id);
-  // Fetch-only load (no turn): sample edges around the first few nodes so the
-  // ambient graph still shows its structure.
+  // Fetch-only load (no turn): sample a random rotation of nodes so repeated
+  // polls progressively discover the whole space's edges instead of always
+  // fetching the same few neighborhoods. The client accumulates edges, so
+  // coverage converges within a few polls.
+  const sample = [...nodes]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 8)
+    .map((n) => n.id);
   const uniqueFocus = [
-    ...new Set(focusIds.length > 0 ? focusIds : nodes.slice(0, 6).map((n) => n.id)),
-  ].slice(0, 6);
+    ...new Set(focusIds.length > 0 ? [...focusIds, ...sample] : sample),
+  ].slice(0, 8);
   const edgeKey = (e: ExploreEdge) => `${e.source}|${e.target}|${e.type}`;
   const edges = new Map<string, ExploreEdge>();
   await Promise.allSettled(
