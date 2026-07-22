@@ -81,6 +81,7 @@ const EDGE_COLORS: Record<string, string> = {
   contradicts: 'rgba(248,113,113,0.55)',
   supersedes: 'rgba(251,191,36,0.5)',
   recall: 'rgba(52,211,153,0.35)',
+  similar: 'rgba(134,146,144,0.22)',
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -135,6 +136,7 @@ export default function GraphExplorer() {
   const paintRef = useRef({
     fresh: new Map<string, number>(),
     recalled: new Set<string>(),
+    contradicted: new Set<string>(),
     pulses: new Map<string, number>(),
     activeEdges: new Set<string>(),
     spotlight: false,
@@ -292,7 +294,28 @@ export default function GraphExplorer() {
         const cx = (bb.x[0] + bb.x[1]) / 2
         const cy = (bb.y[0] + bb.y[1]) / 2
         // Fill ~75% of the viewport, clamped to the readable band.
-        const k = Math.min((size.w * 0.75) / (w + 80), (size.h * 0.75) / (h + 80))
+        const k = Math.max(
+          K_MIN,
+          Math.min(K_MAX, Math.min((size.w * 0.75) / (w + 80), (size.h * 0.75) / (h + 80))),
+        )
+        // Dead-zone: if the target is already comfortably in view at a similar
+        // zoom, do not move at all. This kills the creeping second zoom when a
+        // follow-up frame (for example consolidation landing) targets content
+        // that is already on screen.
+        try {
+          const curK = fgRef.current?.zoom()
+          const curC = fgRef.current?.centerAt() as { x: number; y: number } | undefined
+          if (curK !== undefined && curC !== undefined) {
+            const kClose = k / curK > 0.7 && k / curK < 1.45
+            const shiftPx = Math.hypot((cx - curC.x) * curK, (cy - curC.y) * curK)
+            const centered = shiftPx < Math.min(size.w, size.h) * 0.18
+            const fitsNow =
+              w * curK < size.w * 0.9 && h * curK < size.h * 0.9
+            if (kClose && centered && fitsNow) return
+          }
+        } catch {
+          /* fall through to a normal move */
+        }
         moveCamera(cx, cy, k, ms)
       } catch {
         /* never fatal */
@@ -436,6 +459,7 @@ export default function GraphExplorer() {
       const paint = paintRef.current
       paint.fresh.clear()
       paint.recalled.clear()
+      paint.contradicted.clear()
       paint.activeEdges.clear()
       paint.spotlight = false
 
@@ -460,6 +484,15 @@ export default function GraphExplorer() {
         if (res.contradiction) {
           setContradiction(res.contradiction)
           setTimeout(() => setContradiction(null), 8000)
+          // Mark the overturned memory ON the canvas: red, pulsing, until the
+          // next turn. The alert card explains; the graph shows.
+          const oldText = res.contradiction.old.trim()
+          for (const n of dataRef.current.nodes) {
+            if (n.content.trim() === oldText || n.content.trim().startsWith(oldText.slice(0, 80))) {
+              paint.contradicted.add(n.id)
+              paint.pulses.set(n.id, performance.now())
+            }
+          }
         }
         if (res.response) setAnswer(res.response)
         setSuggestions(pickSuggestions())
@@ -563,7 +596,8 @@ export default function GraphExplorer() {
       const isRecalled = paint.recalled.has(node.id)
       const isHover = hoverRef.current?.id === node.id
       const isQuery = node.memory_type === 'query'
-      const dimmed = paint.spotlight && !isFresh && !isRecalled && !isHover
+      const isContradicted = paint.contradicted.has(node.id)
+      const dimmed = paint.spotlight && !isFresh && !isRecalled && !isContradicted && !isHover
       const degree = paint.degree.get(node.id) ?? 0
       const r = (isQuery ? 5.5 : 3.5) + Math.min(4.5, degree * 0.8) + (isFresh && !isQuery ? 1.4 : 0)
       const x = node.x ?? 0
@@ -584,7 +618,9 @@ export default function GraphExplorer() {
       }
 
       let fill = '#9c9ca4'
-      if (isQuery) {
+      if (isContradicted) {
+        fill = '#f87171'
+      } else if (isQuery) {
         fill = '#a7f3d0'
       } else if (isFresh) {
         const t = Math.min(1, (now - (born as number)) / 1800)
@@ -595,8 +631,8 @@ export default function GraphExplorer() {
       }
       if (dimmed) fill = 'rgba(82,82,91,0.30)'
 
-      if ((isFresh || isRecalled || isHover) && !reduced) {
-        ctx.shadowColor = isRecalled ? '#34d399' : '#a7f3d0'
+      if ((isFresh || isRecalled || isHover || isContradicted) && !reduced) {
+        ctx.shadowColor = isContradicted ? '#f87171' : isRecalled ? '#34d399' : '#a7f3d0'
         ctx.shadowBlur = 16
       }
       ctx.beginPath()
@@ -614,7 +650,8 @@ export default function GraphExplorer() {
 
       // Labels: recalled and fresh memories tell the story on-canvas; hover
       // reveals the rest. Crisp only once the webfont is actually loaded.
-      const showLabel = (isHover || isRecalled || isFresh) && scale > 0.5 && fontReadyRef.current
+      const showLabel =
+        (isHover || isRecalled || isFresh || isContradicted) && scale > 0.5 && fontReadyRef.current
       if (showLabel) {
         const label = truncate(node.content, 52)
         const fontSize = Math.max(11, 12) / scale
@@ -844,7 +881,9 @@ export default function GraphExplorer() {
                           ? 'bg-red-500/15 text-red-400'
                           : c.type === 'supersedes'
                             ? 'bg-amber-500/15 text-amber-400'
-                            : 'bg-emerald-500/10 text-emerald-400'
+                            : c.type === 'similar'
+                              ? 'bg-zinc-800 text-zinc-400'
+                              : 'bg-emerald-500/10 text-emerald-400'
                       }`}
                     >
                       {c.type === 'recall' ? 'recalled with' : c.type.replace(/_/g, ' ')}
@@ -861,6 +900,22 @@ export default function GraphExplorer() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* color language, quiet and always visible on md+ */}
+      <div className="absolute bottom-5 left-5 hidden flex-col gap-1 text-[10px] text-zinc-500 md:flex">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" /> recalled or new
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-red-400" /> contradicted
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-3 bg-amber-400/70" /> supersedes
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-px w-3 bg-zinc-500" /> similar
+        </span>
+      </div>
 
       {/* re-center: the only thing that takes the camera back after you pan */}
       <button
