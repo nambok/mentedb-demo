@@ -75,3 +75,44 @@ export async function getMemories(sessionId: string): Promise<Memory[]> {
   const data = await res.json();
   return data.memories || [];
 }
+
+// --- Graph explorer ---
+
+export interface GraphNodeT {
+  id: string;
+  content: string;
+  memory_type: string;
+  tags: string[];
+  health?: number;
+}
+
+export interface GraphEdgeT {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+}
+
+export interface ExploreResponse {
+  stored: Array<{ content: string; memory_type: string; id: string | null }>;
+  recalled: Array<{ content: string; relevance: number; id: string | null }>;
+  contradiction: { old: string; new: string } | null;
+  interference: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+  nodes: GraphNodeT[];
+  edges: GraphEdgeT[];
+}
+
+/** Run arbitrary text through the real engine: extract, store, relate, recall.
+ *  Returns the turn's results plus the session's full graph afterward. */
+export async function explore(sessionId: string, text: string, turnId: number): Promise<ExploreResponse> {
+  const res = await fetch(`${BASE}/api/explore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, text, turn_id: turnId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Explore failed' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

@@ -597,6 +597,143 @@ async function handleMemories(
 }
 
 // ---------------------------------------------------------------------------
+// Graph explorer: one call that ingests arbitrary text through the real engine
+// and returns everything the animation needs: what was extracted and stored,
+// what was recalled, and the session's live knowledge graph (nodes + typed
+// edges) after the turn.
+// ---------------------------------------------------------------------------
+
+interface GraphNode {
+  id: string;
+  content: string;
+  memory_type: string;
+  tags: string[];
+  health?: number;
+}
+
+interface ExploreEdge {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+}
+
+async function handleExplore(
+  body: { session_id?: string; text?: string; turn_id?: number },
+  secrets: Secrets
+): Promise<LambdaResponse> {
+  const { session_id, text } = body;
+  if (!session_id) {
+    return respond(400, { error: "Missing session_id" });
+  }
+  if (text && text.length > 600) {
+    return respond(400, { error: "Text too long (max 600 characters)" });
+  }
+
+  const agentId = agentIdFor(session_id);
+  const project = `demo-${session_id}`;
+
+  // 1. Run the text through the real pipeline: extraction, dedup,
+  // contradiction detection, storage, and recall, in one engine call.
+  // With no text this is a fetch-only call: skip the turn and just return
+  // the session's current graph (the explorer's initial load).
+  let turn: {
+    context?: Array<{ content?: string; relevance?: number; memory_type?: string }>;
+    memories_stored?: Array<{ content: string; memory_type: string }>;
+    contradiction_details?: Array<{ old_content: string; new_content: string }>;
+    interference?: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+    proactive_recalls?: Array<{ content?: string; relevance?: number; memory_id?: string }>;
+  } = {};
+  if (text && text.trim()) {
+    try {
+      turn = (await mentedbToolCall(secrets, "process_turn", {
+        user_message: text.trim(),
+        assistant_response: "",
+        turn_id: body.turn_id ?? 1,
+        project_context: project,
+        agent_id: agentId,
+      })) as typeof turn;
+    } catch (err) {
+      console.error("explore process_turn failed:", err);
+      return respond(502, { error: "Memory engine unavailable" });
+    }
+  }
+
+  // 2. The session's graph after the turn: this visitor's memories only
+  // (agent scoped), raw turn captures excluded so the graph shows facts.
+  let nodes: GraphNode[] = [];
+  try {
+    const listed = (await mentedbRestGet(
+      secrets,
+      `/api/memories?agent_id=${agentId}&exclude_tag=turn&limit=200`
+    )) as { memories?: GraphNode[] };
+    nodes = Array.isArray(listed.memories) ? listed.memories : [];
+  } catch (err) {
+    console.error("explore memory list failed:", err);
+  }
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const byContent = new Map(nodes.map((n) => [n.content.trim(), n.id]));
+
+  // 3. Resolve the ids of what this turn stored and recalled, so the client
+  // can animate exactly those nodes.
+  const storedRaw = Array.isArray(turn.memories_stored) ? turn.memories_stored : [];
+  const stored = storedRaw.map((m) => ({
+    content: m.content,
+    memory_type: m.memory_type,
+    id: byContent.get(m.content.trim()) ?? null,
+  }));
+  const recalledRaw = dedupeByContent(
+    (Array.isArray(turn.context) ? turn.context : []) as Array<{ content: string; relevance?: number }>
+  );
+  const recalled = recalledRaw.slice(0, 8).map((m) => ({
+    content: m.content,
+    relevance: m.relevance ?? 0,
+    id: byContent.get((m.content ?? "").trim()) ?? null,
+  }));
+
+  // 4. Typed edges around the memories this turn touched. Depth 1 per focus
+  // node, a handful of parallel lookups, edges filtered to this session's
+  // nodes so nothing leaks across sessions.
+  const focusIds = [
+    ...stored.map((s) => s.id),
+    ...recalled.map((r) => r.id),
+  ].filter((id): id is string => !!id);
+  // Fetch-only load (no turn): sample edges around the first few nodes so the
+  // ambient graph still shows its structure.
+  const uniqueFocus = [
+    ...new Set(focusIds.length > 0 ? focusIds : nodes.slice(0, 6).map((n) => n.id)),
+  ].slice(0, 6);
+  const edgeKey = (e: ExploreEdge) => `${e.source}|${e.target}|${e.type}`;
+  const edges = new Map<string, ExploreEdge>();
+  await Promise.allSettled(
+    uniqueFocus.map(async (id) => {
+      const hood = (await mentedbRestGet(
+        secrets,
+        `/api/graph/neighborhood?id=${encodeURIComponent(id)}&depth=1`
+      )) as { edges?: Array<{ source: string; target: string; type: string; weight: number }> };
+      for (const e of hood.edges ?? []) {
+        if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+          const edge: ExploreEdge = { source: e.source, target: e.target, type: e.type, weight: e.weight };
+          edges.set(edgeKey(edge), edge);
+        }
+      }
+    })
+  );
+
+  const contradictions = Array.isArray(turn.contradiction_details) ? turn.contradiction_details : [];
+  return respond(200, {
+    stored,
+    recalled,
+    contradiction: contradictions.length > 0
+      ? { old: contradictions[0].old_content, new: contradictions[0].new_content }
+      : null,
+    interference: Array.isArray(turn.interference) ? turn.interference : [],
+    nodes,
+    edges: [...edges.values()],
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Seed persona memories
 // ---------------------------------------------------------------------------
 
@@ -913,6 +1050,14 @@ export const handler = async (
 
     if (method === "POST" && path === "/api/seed") {
       const result = await handleSeed(body as unknown as SeedRequest, secrets);
+      return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
+    }
+
+    if (method === "POST" && path === "/api/explore") {
+      const result = await handleExplore(
+        body as { session_id?: string; text?: string; turn_id?: number },
+        secrets
+      );
       return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
     }
 
