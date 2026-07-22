@@ -632,6 +632,20 @@ interface ExploreEdge {
   weight: number;
 }
 
+// Seeds for the SHARED graph explorer space: neutral, third-person facts (a
+// communal graph is nobody's first person), written to interlink with each
+// other and with the explorer's suggestion chips so relationships form fast.
+const GRAPH_SEEDS: Array<{ content: string; memory_type: string; tags: string[] }> = [
+  { content: "The team deploys every Friday afternoon and Sarah reviews each release", memory_type: "procedural", tags: ["team", "deploys"] },
+  { content: "TaskPilot is a sample SaaS project built with Next.js and Postgres", memory_type: "semantic", tags: ["taskpilot", "stack"] },
+  { content: "TaskPilot moved from MongoDB to Postgres for relational queries", memory_type: "correction", tags: ["taskpilot", "database"] },
+  { content: "Max is a golden retriever who is allergic to chicken", memory_type: "semantic", tags: ["pets"] },
+  { content: "Standup happens at 9:30 on Tuesdays in the Denver office", memory_type: "semantic", tags: ["team", "schedule"] },
+  { content: "The Denver office opened in March and hosts the platform team", memory_type: "semantic", tags: ["offices"] },
+  { content: "The staging environment runs in eu-west-1 behind a feature flag", memory_type: "semantic", tags: ["infra"] },
+  { content: "The design system pairs an emerald accent with dark zinc surfaces", memory_type: "semantic", tags: ["design"] },
+];
+
 async function handleExplore(
   body: { session_id?: string; text?: string; turn_id?: number },
   secrets: Secrets
@@ -715,7 +729,7 @@ async function handleExplore(
   try {
     nodes = await listNodes();
     if (nodes.length === 0 && (!text || !text.trim())) {
-      const seeds = PERSONAS["developer"] ?? [];
+      const seeds = GRAPH_SEEDS;
       await mentedbToolCall(secrets, "store_memories", {
         agent_id: agentId,
         memories: seeds.map((mem) => ({
@@ -816,13 +830,24 @@ async function handleExplore(
               .map((r) => `- ${r.content}`)
               .join("\n")}`
           : "You have no relevant memories yet.";
+      const contradictionNote =
+        Array.isArray(turn.contradiction_details) && turn.contradiction_details.length > 0
+          ? `This turn REPLACED an older fact: "${turn.contradiction_details[0].old_content}" is now superseded by "${turn.contradiction_details[0].new_content}".`
+          : "";
       const raw = await callBedrock(
         [
           "You are the voice of a live memory-graph demo. Reply in EXACTLY ONE short sentence,",
-          "20 words maximum, conversational and specific. Ground the reply in the remembered",
-          "facts when relevant; if the user stated a new fact, acknowledge it and connect it to",
-          "something you remember. No markdown, no lists, no preamble.",
+          "20 words maximum, conversational and specific.",
+          "HARD RULES:",
+          "- Use ONLY the remembered facts below. Quote their real values verbatim.",
+          "- If the facts do not contain what was asked, say plainly you have not learned that",
+          "  yet. NEVER guess, NEVER fabricate, NEVER write placeholder text or brackets.",
+          "- Older values that were corrected are replaced, not kept: if asked about a previous",
+          "  value that is not in the facts, say you only keep the corrected version and give",
+          "  the current value.",
+          "- No markdown, no lists, no preamble.",
           memoryContext,
+          contradictionNote,
         ].join("\n"),
         [{ role: "user", content: text.trim() }]
       );
@@ -832,6 +857,38 @@ async function handleExplore(
     } catch (err) {
       console.error("explore reply generation failed:", err);
     }
+  }
+
+  // Similarity edges: the engine's typed edges accumulate asynchronously and
+  // sparsely, so on their own most memories would look like orphans. Compute
+  // honest lexical-similarity links (jaccard over significant tokens, top 3
+  // per node) so every memory visibly maps to its kin; typed engine edges
+  // take precedence on the same pair.
+  const pairKey = (a: string, b: string) => (a < b ? `${a}~${b}` : `${b}~${a}`);
+  const typedPairs = new Set([...edges.values()].map((e) => pairKey(e.source, e.target)));
+  const tokenSets = nodes.map((n) => ({ id: n.id, tokens: significantTokens(n.content) }));
+  const candidates: Array<{ a: string; b: string; sim: number }> = [];
+  for (let i = 0; i < tokenSets.length; i++) {
+    for (let j = i + 1; j < tokenSets.length; j++) {
+      const A = tokenSets[i];
+      const B = tokenSets[j];
+      if (!A.tokens.size || !B.tokens.size) continue;
+      const sim = jaccard(A.tokens, B.tokens);
+      if (sim >= 0.22 && !typedPairs.has(pairKey(A.id, B.id))) {
+        candidates.push({ a: A.id, b: B.id, sim });
+      }
+    }
+  }
+  candidates.sort((x, y) => y.sim - x.sim);
+  const perNode = new Map<string, number>();
+  for (const c of candidates) {
+    const ca = perNode.get(c.a) ?? 0;
+    const cb = perNode.get(c.b) ?? 0;
+    if (ca >= 3 || cb >= 3) continue;
+    perNode.set(c.a, ca + 1);
+    perNode.set(c.b, cb + 1);
+    const edge: ExploreEdge = { source: c.a, target: c.b, type: "similar", weight: c.sim };
+    edges.set(edgeKey(edge), edge);
   }
 
   const contradictions = Array.isArray(turn.contradiction_details) ? turn.contradiction_details : [];
