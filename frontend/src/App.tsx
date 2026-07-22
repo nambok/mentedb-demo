@@ -1,6 +1,24 @@
-import { Suspense, lazy } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { Suspense, lazy, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Landing from './pages/Landing'
+
+// Explicit GA4 page_view per SPA route change, so /chat and /graph views are
+// tracked regardless of the property's Enhanced Measurement setting.
+declare global {
+  interface Window {
+    gtag?: (...args: unknown[]) => void
+  }
+}
+function RouteTracker() {
+  const location = useLocation()
+  useEffect(() => {
+    window.gtag?.('event', 'page_view', {
+      page_path: location.pathname + location.search,
+      page_location: window.location.href,
+    })
+  }, [location])
+  return null
+}
 
 // Lazy routes: the landing stays featherweight; the force-graph bundle only
 // loads when someone opens the explorer.
@@ -18,6 +36,7 @@ function PageLoader() {
 function App() {
   return (
     <BrowserRouter>
+      <RouteTracker />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<Landing />} />
