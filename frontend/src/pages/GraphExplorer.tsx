@@ -420,6 +420,26 @@ export default function GraphExplorer() {
               paintRef.current.activeEdges.add(l.key)
               if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), 400 + j * 160)
             })
+            // Contradictions surface HERE, not in the turn response: detection
+            // happens when the fact actually stores (async extraction), which
+            // is this moment. A contradicts/supersedes edge touching a fresh
+            // node means one of this turn's facts overturned an older memory.
+            const byId = new Map(dataRef.current.nodes.map((x) => [x.id, x]))
+            for (const l of addedLinks) {
+              if (l.type !== 'contradicts' && l.type !== 'supersedes') continue
+              const s = endpointId(l.source)
+              const t = endpointId(l.target)
+              const freshId = paintRef.current.fresh.has(s) ? s : paintRef.current.fresh.has(t) ? t : null
+              if (!freshId) continue
+              const oldId = freshId === s ? t : s
+              const oldNode = byId.get(oldId)
+              if (oldNode) {
+                paintRef.current.contradicted.add(oldId)
+                paintRef.current.pulses.set(oldId, performance.now())
+                setContradiction({ old: oldNode.content, new: byId.get(freshId)?.content ?? '' })
+                setTimeout(() => setContradiction(null), 8000)
+              }
+            }
             // The real fact nodes have landed; retire the transient query
             // node, settle locally (existing nodes pinned), and frame ONCE
             // against settled positions, still part of the explicit turn.
