@@ -745,14 +745,30 @@ async function handleExplore(
     (Array.isArray(turn.context) ? turn.context : []) as Array<{
       id?: string;
       content: string;
+      memory_type?: string;
       relevance_score?: number;
     }>
   );
   const recalled = recalledRaw.slice(0, 8).map((m) => ({
     content: m.content,
+    memory_type: m.memory_type ?? "semantic",
     relevance: m.relevance_score ?? 0,
-    id: (m.id && nodeIds.has(m.id) ? m.id : null) ?? byContent.get((m.content ?? "").trim()) ?? null,
+    id: m.id ?? byContent.get((m.content ?? "").trim()) ?? null,
   }));
+  // Recall reaches shared/global memories that live outside this space's
+  // listing; add them as real nodes so the graph can highlight what the
+  // engine actually recalled instead of silently dropping it.
+  for (const r of recalled) {
+    if (r.id && !nodeIds.has(r.id)) {
+      nodeIds.add(r.id);
+      nodes.push({
+        id: r.id,
+        content: r.content,
+        memory_type: r.memory_type,
+        tags: [],
+      });
+    }
+  }
 
   // 4. Typed edges around the memories this turn touched. Depth 1 per focus
   // node, a handful of parallel lookups, edges filtered to this session's
@@ -783,6 +799,35 @@ async function handleExplore(
     })
   );
 
+  // 5. A short grounded reply, so visitors see the brain AND the voice. Uses
+  // the recalled memories as context; degrades to null if the model is down.
+  let response: string | null = null;
+  if (text && text.trim()) {
+    try {
+      const memoryContext =
+        recalled.length > 0
+          ? `You remember these facts about this shared space:\n${recalled
+              .map((r) => `- ${r.content}`)
+              .join("\n")}`
+          : "You have no relevant memories yet.";
+      const raw = await callBedrock(
+        [
+          "You are the voice of a live memory-graph demo. Reply in EXACTLY ONE short sentence,",
+          "20 words maximum, conversational and specific. Ground the reply in the remembered",
+          "facts when relevant; if the user stated a new fact, acknowledge it and connect it to",
+          "something you remember. No markdown, no lists, no preamble.",
+          memoryContext,
+        ].join("\n"),
+        [{ role: "user", content: text.trim() }]
+      );
+      // Keep it snappy no matter what the model does: first sentence, capped.
+      const first = raw.split(/(?<=[.!?])\s+/)[0] ?? raw;
+      response = first.length > 180 ? `${first.slice(0, 179)}…` : first;
+    } catch (err) {
+      console.error("explore reply generation failed:", err);
+    }
+  }
+
   const contradictions = Array.isArray(turn.contradiction_details) ? turn.contradiction_details : [];
   return respond(200, {
     stored,
@@ -791,6 +836,7 @@ async function handleExplore(
       ? { old: contradictions[0].old_content, new: contradictions[0].new_content }
       : null,
     interference: Array.isArray(turn.interference) ? turn.interference : [],
+    response,
     nodes,
     edges: [...edges.values()],
   });

@@ -95,9 +95,10 @@ export interface GraphEdgeT {
 
 export interface ExploreResponse {
   stored: Array<{ content: string; memory_type: string; id: string | null }>;
-  recalled: Array<{ content: string; relevance: number; id: string | null }>;
+  recalled: Array<{ content: string; relevance: number; id: string | null; memory_type?: string }>;
   contradiction: { old: string; new: string } | null;
   interference: Array<{ memory_a: string; memory_b: string; similarity: number; disambiguation: string }>;
+  response?: string | null;
   nodes: GraphNodeT[];
   edges: GraphEdgeT[];
 }

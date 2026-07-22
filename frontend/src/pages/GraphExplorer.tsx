@@ -36,12 +36,37 @@ const STOPWORDS = new Set(
   'a an and are as at be but by for from has have i in is it my of on or our so that the their they this to was we with you your'.split(' '),
 )
 
-const SUGGESTIONS = [
+const SUGGESTION_POOL = [
   'I switched from MongoDB to Postgres last month',
   'My dog Max is allergic to chicken',
   'We deploy every Friday and Sarah reviews the release',
   'Actually I moved from Austin to Denver in March',
+  'What database do I use?',
+  'My favorite editor is Neovim with a Catppuccin theme',
+  'Our API rate limit is 1000 requests per minute',
+  'I am training for a marathon in October',
+  'Remind me what I said about deployments',
+  'My sister Ana is visiting next weekend',
+  'We migrated the frontend from Vue to React last quarter',
+  'I only drink decaf after noon',
+  'The staging environment lives in eu-west-1',
+  'What do you know about my pets?',
+  'Our design system uses an emerald accent on dark zinc',
+  'I picked up climbing again after two years off',
+  'The standup moved to 9:30 on Tuesdays',
+  'What did people tell you about their stacks?',
+  'My car is an old Land Cruiser I refuse to sell',
+  'We cut a release candidate every other Thursday',
 ]
+
+function pickSuggestions(n = 4): string[] {
+  const pool = [...SUGGESTION_POOL]
+  const out: string[] = []
+  while (out.length < n && pool.length > 0) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0])
+  }
+  return out
+}
 
 const STAGE_LABEL: Record<Stage, string> = {
   boot: 'Waking the shared graph',
@@ -55,6 +80,7 @@ const STAGE_LABEL: Record<Stage, string> = {
 const EDGE_COLORS: Record<string, string> = {
   contradicts: 'rgba(248,113,113,0.55)',
   supersedes: 'rgba(251,191,36,0.5)',
+  recall: 'rgba(52,211,153,0.35)',
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -90,10 +116,13 @@ export default function GraphExplorer() {
   const [error, setError] = useState<string | null>(null)
   const [contradiction, setContradiction] = useState<{ old: string; new: string } | null>(null)
   const [arrivals, setArrivals] = useState(0)
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>(() => pickSuggestions())
   const busyRef = useRef(false)
   const turnRef = useRef(1)
   const submitTokenRef = useRef(0)
   const fontReadyRef = useRef(false)
+  const didFitRef = useRef(false)
 
   const dataRef = useRef<{ nodes: GNode[]; links: GLink[] }>({ nodes: [], links: [] })
   const [graphData, setGraphData] = useState(dataRef.current)
@@ -186,6 +215,20 @@ export default function GraphExplorer() {
     [recomputeDegrees],
   )
 
+  /** Remove the transient query node (and its retrieval edges) once the real
+   *  fact nodes have taken over, keeping the shared graph clean. */
+  const removeQueryNode = useCallback(() => {
+    const { nodes, links } = dataRef.current
+    const kept = nodes.filter((n) => !n.id.startsWith('query-'))
+    if (kept.length === nodes.length) return
+    const keptLinks = links.filter(
+      (l) => !endpointId(l.source).startsWith('query-') && !endpointId(l.target).startsWith('query-'),
+    )
+    dataRef.current = { nodes: kept, links: keptLinks }
+    setGraphData({ nodes: kept, links: keptLinks })
+    recomputeDegrees()
+  }, [recomputeDegrees])
+
   const safeZoomToFit = useCallback((ms: number, pad: number, filter?: (n: GNode) => boolean) => {
     try {
       const nodes = dataRef.current.nodes.filter((n) => n.x !== undefined)
@@ -197,6 +240,24 @@ export default function GraphExplorer() {
     }
   }, [])
 
+  /** Frame a set of nodes with the zoom clamped to a readable band: never so
+   *  close that one memory fills the screen, never so far the graph vanishes. */
+  const fitTo = useCallback(
+    (filter?: (n: GNode) => boolean) => {
+      safeZoomToFit(800, 120, filter)
+      setTimeout(() => {
+        try {
+          const z = fgRef.current?.zoom()
+          if (z !== undefined && z > 1.5) fgRef.current?.zoom(1.5, 300)
+          if (z !== undefined && z < 0.35) fgRef.current?.zoom(0.35, 300)
+        } catch {
+          /* ignore */
+        }
+      }, 850)
+    },
+    [safeZoomToFit],
+  )
+
   // Boot: load the shared graph (the lambda self-seeds it when empty).
   useEffect(() => {
     let cancelled = false
@@ -206,7 +267,9 @@ export default function GraphExplorer() {
         if (cancelled) return
         mergeGraph(res)
         setStage('idle')
-        setTimeout(() => safeZoomToFit(900, 90), 700)
+        // Frame the graph once positions exist; onEngineStop below re-frames
+        // when the simulation settles, so the first paint is never off-screen.
+        setTimeout(() => fitTo(), 900)
       } catch {
         if (!cancelled) {
           setError('The engine is waking up. Type something to retry.')
@@ -270,16 +333,24 @@ export default function GraphExplorer() {
             })
             await delay(1400)
             if (submitTokenRef.current !== token) return
-            safeZoomToFit(800, 120, (n) => paintRef.current.fresh.has(n.id) || paintRef.current.recalled.has(n.id))
+            // The real fact nodes have landed; retire the transient query node
+            // and frame the result.
+            removeQueryNode()
+            fitTo((n) => paintRef.current.fresh.has(n.id) || paintRef.current.recalled.has(n.id))
             break
           }
         } catch {
           /* keep watching */
         }
       }
-      if (submitTokenRef.current === token) setStage('idle')
+      if (submitTokenRef.current === token) {
+        // Nothing extractable landed: retire the query node (nothing was
+        // actually stored) and return to idle.
+        removeQueryNode()
+        setStage('idle')
+      }
     },
-    [mergeGraph, reduced, safeZoomToFit],
+    [mergeGraph, reduced, removeQueryNode, fitTo],
   )
 
   const submit = useCallback(
@@ -289,6 +360,7 @@ export default function GraphExplorer() {
       busyRef.current = true
       setBusy(true)
       setError(null)
+      setAnswer(null)
       setContradiction(null)
       setInput('')
       const token = ++submitTokenRef.current
@@ -321,48 +393,63 @@ export default function GraphExplorer() {
           setContradiction(res.contradiction)
           setTimeout(() => setContradiction(null), 8000)
         }
+        if (res.response) setAnswer(res.response)
+        setSuggestions(pickSuggestions())
+        removeQueryNode()
         mergeGraph(res)
 
-        // Recall: the graph itself tells the story. Recalled memories light
-        // up with labels, their edges flow, and the camera dives in.
+        // Recall: the graph itself tells the story. Your words enter as a
+        // glowing query node, retrieval edges draw to what the engine
+        // recalled, and the camera dives in.
         setStage('recall')
         const now = performance.now()
         const recalledIds = res.recalled.map((r) => r.id).filter((id): id is string => !!id)
+        const dropAt = fgRef.current?.screen2GraphCoords(size.w / 2, size.h * 0.55) ?? { x: 0, y: 0 }
+        {
+          // The query node ALWAYS enters, even with zero recalls, so every
+          // submit visibly does something; retrieval edges draw when there are
+          // memories to draw to.
+          const queryId = `query-${token}`
+          const { nodes, links } = dataRef.current
+          const qNode: GNode = {
+            id: queryId,
+            content: truncate(text, 60),
+            memory_type: 'query',
+            x: dropAt.x,
+            y: dropAt.y,
+          }
+          const qLinks: GLink[] = recalledIds.map((rid) => ({
+            source: queryId,
+            target: rid,
+            type: 'recall',
+            key: linkKey(queryId, rid, 'recall'),
+          }))
+          dataRef.current = { nodes: [...nodes, qNode], links: [...links, ...qLinks] }
+          setGraphData(dataRef.current)
+          recomputeDegrees()
+          paint.fresh.set(queryId, now)
+          paint.pulses.set(queryId, now)
+          qLinks.forEach((l, i) => {
+            paint.activeEdges.add(l.key)
+            if (!reduced) setTimeout(() => fgRef.current?.emitParticle(l), 250 + i * 160)
+          })
+          fgRef.current?.d3ReheatSimulation()
+        }
         for (const id of recalledIds) {
           paint.recalled.add(id)
           paint.pulses.set(id, now)
           for (const l of dataRef.current.links) {
             if (endpointId(l.source) === id || endpointId(l.target) === id) {
               paint.activeEdges.add(l.key)
-              if (!reduced) fgRef.current?.emitParticle(l)
             }
           }
         }
         paint.spotlight = recalledIds.length > 0
-        if (recalledIds.length > 0) {
-          safeZoomToFit(800, 130, (n) => paint.recalled.has(n.id))
-          // A brief camera dive into the strongest recalls, labels showing.
-          if (!reduced) {
-            await delay(950)
-            const byId = new Map(dataRef.current.nodes.map((n) => [n.id, n]))
-            for (const id of recalledIds.slice(0, 2)) {
-              if (submitTokenRef.current !== token) return
-              const n = byId.get(id)
-              if (n?.x === undefined || n.y === undefined) continue
-              try {
-                fgRef.current?.centerAt(n.x, n.y, 650)
-                fgRef.current?.zoom(2.6, 650)
-              } catch {
-                /* ignore camera failures */
-              }
-              await delay(1150)
-            }
-            safeZoomToFit(800, 130, (n) => paint.recalled.has(n.id))
-          }
-          await delay(reduced ? 200 : 900)
-        } else {
-          await delay(reduced ? 100 : 500)
-        }
+        // One calm, clamped camera move: frame the query node plus everything
+        // it recalled, never zooming past readable (a tiny set would otherwise
+        // blow one memory up to fill the screen).
+        fitTo((n) => paint.recalled.has(n.id) || paint.fresh.has(n.id))
+        await delay(reduced ? 200 : recalledIds.length > 0 ? 2600 : 1200)
         paint.spotlight = false
 
         // Consolidation: watch the engine weave the new facts in (async
@@ -376,7 +463,7 @@ export default function GraphExplorer() {
         setBusy(false)
       }
     },
-    [reduced, size, mergeGraph, safeZoomToFit, watchConsolidation],
+    [reduced, size, mergeGraph, removeQueryNode, fitTo, watchConsolidation],
   )
 
   // --- canvas painting ---
@@ -404,9 +491,10 @@ export default function GraphExplorer() {
       const isFresh = born !== undefined
       const isRecalled = paint.recalled.has(node.id)
       const isHover = hoverRef.current?.id === node.id
+      const isQuery = node.memory_type === 'query'
       const dimmed = paint.spotlight && !isFresh && !isRecalled && !isHover
       const degree = paint.degree.get(node.id) ?? 0
-      const r = 3 + Math.min(4.5, degree * 0.8) + (isFresh ? 1.4 : 0)
+      const r = (isQuery ? 5.5 : 3.5) + Math.min(4.5, degree * 0.8) + (isFresh && !isQuery ? 1.4 : 0)
       const x = node.x ?? 0
       const y = node.y ?? 0
 
@@ -424,8 +512,10 @@ export default function GraphExplorer() {
         }
       }
 
-      let fill = '#8e8e96'
-      if (isFresh) {
+      let fill = '#9c9ca4'
+      if (isQuery) {
+        fill = '#a7f3d0'
+      } else if (isFresh) {
         const t = Math.min(1, (now - (born as number)) / 1800)
         const lerp = (a: number, b: number) => Math.round(a + (b - a) * t)
         fill = `rgb(${lerp(244, 52)},${lerp(244, 211)},${lerp(245, 153)})`
@@ -519,9 +609,39 @@ export default function GraphExplorer() {
         onNodeHover={(n) => {
           hoverRef.current = (n as GNode) ?? null
         }}
+        onNodeClick={(n) => {
+          // Click a memory: light up its relationships and frame them.
+          const node = n as GNode
+          const paint = paintRef.current
+          if (busyRef.current) return
+          paint.recalled.clear()
+          paint.activeEdges.clear()
+          paint.recalled.add(node.id)
+          paint.pulses.set(node.id, performance.now())
+          for (const l of dataRef.current.links) {
+            const s = endpointId(l.source)
+            const t = endpointId(l.target)
+            if (s === node.id || t === node.id) {
+              paint.activeEdges.add(l.key)
+              paint.recalled.add(s === node.id ? t : s)
+            }
+          }
+          paint.spotlight = true
+          fitTo((x) => paint.recalled.has(x.id))
+          setTimeout(() => {
+            paint.spotlight = false
+          }, 2600)
+        }}
+        onBackgroundClick={() => {
+          const paint = paintRef.current
+          paint.recalled.clear()
+          paint.activeEdges.clear()
+          paint.spotlight = false
+        }}
         linkColor={linkColor}
         linkWidth={(l) => (paintRef.current.activeEdges.has((l as GLink).key) ? 1.4 : 0.5)}
         linkCurvature={0.18}
+        linkLineDash={(l) => ((l as GLink).type === 'recall' ? [3, 2] : null)}
         linkDirectionalParticles={(l) =>
           !reduced && paintRef.current.activeEdges.has((l as GLink).key) ? 2 : 0
         }
@@ -529,6 +649,14 @@ export default function GraphExplorer() {
         linkDirectionalParticleWidth={2.4}
         linkDirectionalParticleColor={() => '#6ee7b7'}
         cooldownTicks={200}
+        onEngineStop={() => {
+          // First settle: frame the graph so the initial view is never a
+          // tiny, seemingly empty constellation in a corner.
+          if (!didFitRef.current) {
+            didFitRef.current = true
+            fitTo()
+          }
+        }}
         d3AlphaDecay={0.03}
         d3VelocityDecay={0.35}
       />
@@ -660,6 +788,23 @@ export default function GraphExplorer() {
 
         {error && <p className="text-xs text-red-400">{error}</p>}
 
+        <AnimatePresence>
+          {answer && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="flex w-full max-w-2xl items-start gap-2.5 rounded-2xl border border-emerald-500/20 bg-zinc-950/85 px-4 py-3 backdrop-blur"
+            >
+              <span className="mt-0.5 shrink-0">
+                <Logo size={16} />
+              </span>
+              <p className="text-sm leading-relaxed text-zinc-200">{answer}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -687,7 +832,7 @@ export default function GraphExplorer() {
         </form>
 
         <div className="flex max-w-2xl flex-wrap justify-center gap-1.5">
-          {SUGGESTIONS.map((s) => (
+          {suggestions.map((s) => (
             <button
               key={s}
               onClick={() => submit(s)}
