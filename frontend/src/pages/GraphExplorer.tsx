@@ -140,6 +140,9 @@ export default function GraphExplorer() {
       const seen = new Set<string>()
       const added: string[] = []
       for (const n of res.nodes) {
+        // A node without a real id (or a duplicate) would corrupt the force
+        // simulation; skip defensively.
+        if (!n.id || seen.has(n.id)) continue
         seen.add(n.id)
         const prev = existing.get(n.id)
         if (prev) {
@@ -155,12 +158,19 @@ export default function GraphExplorer() {
         }
       }
       // Keep nodes the listing may have paged out rather than dropping them.
-      for (const [id, n] of existing) if (!seen.has(id)) nodes.push(n)
+      for (const [id, n] of existing) {
+        if (!seen.has(id)) {
+          seen.add(id)
+          nodes.push(n)
+        }
+      }
 
       const prevLinks = new Map(dataRef.current.links.map((l) => [l.key, l]))
       const links: GLink[] = [...prevLinks.values()]
       const addedLinks: GLink[] = []
       for (const e of res.edges) {
+        // Never hand d3 an edge whose endpoint is not a known node.
+        if (!seen.has(e.source) || !seen.has(e.target) || e.source === e.target) continue
         const key = linkKey(e.source, e.target, e.type)
         if (!prevLinks.has(key)) {
           const l: GLink = { source: e.source, target: e.target, type: e.type, key }
@@ -210,9 +220,11 @@ export default function GraphExplorer() {
   }, [mergeGraph, safeZoomToFit])
 
   // Ambient live poll: other explorers' memories drift in while you watch.
+  // Paused while your own turn is animating or consolidating, so the two poll
+  // loops never overlap.
   useEffect(() => {
     const id = setInterval(async () => {
-      if (busyRef.current || document.hidden || stage === 'boot') return
+      if (busyRef.current || document.hidden || stage !== 'idle') return
       try {
         const res = await explore(SHARED_SESSION, '', 0)
         const before = dataRef.current.nodes.length
@@ -371,6 +383,21 @@ export default function GraphExplorer() {
 
   const paintNode = useCallback(
     (node: GNode, ctx: CanvasRenderingContext2D, scale: number) => {
+      // A paint exception would re-throw every animation frame and hard-freeze
+      // the tab; degrade to skipping the node instead.
+      try {
+        paintNodeInner(node, ctx, scale)
+      } catch {
+        /* skip this node this frame */
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reduced],
+  )
+
+  const paintNodeInner = useCallback(
+    (node: GNode, ctx: CanvasRenderingContext2D, scale: number) => {
+      if (!Number.isFinite(node.x ?? NaN) || !Number.isFinite(node.y ?? NaN) || !Number.isFinite(scale)) return
       const paint = paintRef.current
       const now = performance.now()
       const born = paint.fresh.get(node.id)
