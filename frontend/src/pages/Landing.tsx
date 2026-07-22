@@ -3,6 +3,23 @@ import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { MessageSquare, Share2, ArrowRight } from 'lucide-react'
 
+/** The MenteDB mark: three linked nodes, same as mentedb.com's nav logo. */
+function Logo({ size = 24 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <line x1="16" y1="6" x2="8" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <line x1="16" y1="6" x2="24" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <line x1="8" y1="22" x2="24" y2="22" stroke="#34d399" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="16" cy="6" r="3.5" fill="#34d399" />
+      <circle cx="8" cy="22" r="3.5" fill="#34d399" />
+      <circle cx="24" cy="22" r="3.5" fill="#34d399" />
+      <circle cx="16" cy="6" r="1.5" fill="#0a0a0a" />
+      <circle cx="8" cy="22" r="1.5" fill="#0a0a0a" />
+      <circle cx="24" cy="22" r="1.5" fill="#0a0a0a" />
+    </svg>
+  )
+}
+
 function GithubIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -79,8 +96,8 @@ function MiniGraphPreview({ active }: { active: boolean }) {
   const reduced = useReducedMotion()
   const dur = active ? 5 : 10
   return (
-    <div className="relative h-full w-full overflow-hidden">
-      <svg viewBox="0 0 100 90" className="h-full w-full">
+    <div className="relative h-full w-full overflow-hidden p-5">
+      <svg viewBox="0 0 100 90" preserveAspectRatio="xMidYMid meet" className="h-full w-full">
         {MINI_EDGES.map(([a, b], i) => (
           <line
             key={i}
@@ -145,20 +162,21 @@ function DemoCard({
       onHoverEnd={() => setHover(false)}
       whileHover={{ y: -6, scale: 1.02 }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      className="h-full"
     >
       <Link
         to={to}
-        className={`group block overflow-hidden rounded-2xl border bg-zinc-900/40 backdrop-blur transition-colors ${
+        className={`group flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-900/40 backdrop-blur transition-colors ${
           hover ? 'border-emerald-500/40' : 'border-zinc-800'
         }`}
       >
-        <div className="h-52 border-b border-zinc-800/60 bg-zinc-950/60">{preview(hover)}</div>
-        <div className="p-6">
+        <div className="h-48 shrink-0 border-b border-zinc-800/60 bg-zinc-950/60">{preview(hover)}</div>
+        <div className="flex flex-1 flex-col p-6">
           <div className="flex items-center gap-2.5">
             <span className="text-emerald-400">{icon}</span>
             <h2 className="text-lg font-semibold text-zinc-100">{title}</h2>
           </div>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-400">{blurb}</p>
+          <p className="mt-2 flex-1 text-sm leading-relaxed text-zinc-400">{blurb}</p>
           <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-400">
             Open demo
             <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
@@ -191,9 +209,7 @@ export default function Landing() {
       <div className="relative mx-auto flex min-h-screen max-w-4xl flex-col px-6">
         <header className="flex items-center justify-between py-8">
           <a href="https://mentedb.com" className="flex items-center gap-2 text-sm font-semibold">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-emerald-500 font-bold text-zinc-950">
-              M
-            </span>
+            <Logo size={22} />
             MenteDB
           </a>
           <a
@@ -213,10 +229,7 @@ export default function Landing() {
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="mb-12 text-center"
           >
-            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">
-              Live demos, no signup
-            </p>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
               Watch an AI actually remember
             </h1>
             <p className="mx-auto mt-3 max-w-md text-zinc-400">
@@ -247,8 +260,16 @@ export default function Landing() {
           </motion.div>
         </main>
 
-        <footer className="pb-6 text-center text-xs text-zinc-600">
-          Every session is isolated. Memories you create here are yours alone and expire nightly.
+        <footer className="flex flex-col items-center gap-2 pb-6 text-center text-xs text-zinc-600">
+          <a
+            href="https://github.com/nambok/mentedb"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-zinc-500 transition-colors hover:text-emerald-400"
+          >
+            Built on the open-source MenteDB engine <ArrowRight size={12} />
+          </a>
+          <span>Demo memories reset nightly.</span>
         </footer>
       </div>
     </div>
