@@ -1,7 +1,35 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { MessageSquare, Share2, ArrowRight } from 'lucide-react'
+import { MessageSquare, Share2, ArrowRight, FileText } from 'lucide-react'
+
+/** Mini preview for the agent files card: a heavy document collapsing into a
+ *  thin green meter, the whole pitch in one glance. */
+function MiniFilePreview({ active }: { active: boolean }) {
+  return (
+    <div className="flex h-full flex-col justify-center gap-2 px-6">
+      <div className="space-y-1.5">
+        {[92, 78, 86, 64].map((w, i) => (
+          <div
+            key={i}
+            className="h-1.5 rounded-full bg-zinc-700/70 transition-opacity duration-500"
+            style={{ width: `${w}%`, opacity: active ? 0.25 : 0.6 }}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+            style={{ width: active ? '12%' : '100%' }}
+          />
+        </div>
+        <span className="text-[10px] text-emerald-400">{active ? '2,150' : '17,473'} tok</span>
+      </div>
+      <span className="text-[10px] text-zinc-500">same rules, delivered from memory</span>
+    </div>
+  )
+}
 
 /** The MenteDB mark: three linked nodes, same as mentedb.com's nav logo. */
 function Logo({ size = 24 }: { size?: number }) {
@@ -233,7 +261,7 @@ export default function Landing() {
               Watch an AI actually remember
             </h1>
             <p className="mx-auto mt-3 max-w-md text-zinc-400">
-              Two ways to see MenteDB think. Both run on the real engine, live.
+              Three ways to see MenteDB think. All run on the real engine, live.
             </p>
           </motion.div>
 
@@ -241,7 +269,7 @@ export default function Landing() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="grid gap-6 sm:grid-cols-2"
+            className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
           >
             <DemoCard
               to="/chat"
@@ -256,6 +284,13 @@ export default function Landing() {
               title="Graph Explorer"
               blurb="Type anything and watch it break into facts, join a living knowledge graph, and pull related memories back out."
               preview={(active) => <MiniGraphPreview active={active} />}
+            />
+            <DemoCard
+              to="/agent-files"
+              icon={<FileText size={19} />}
+              title="Agent Files"
+              blurb="Ingest a real AGENTS.md once, give the agent a task, and watch only the governing rules arrive instead of the whole file."
+              preview={(active) => <MiniFilePreview active={active} />}
             />
           </motion.div>
         </main>

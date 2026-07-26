@@ -24,6 +24,7 @@ function RouteTracker() {
 // loads when someone opens the explorer.
 const Chat = lazy(() => import('./pages/Chat'))
 const GraphExplorer = lazy(() => import('./pages/GraphExplorer'))
+const AgentFiles = lazy(() => import('./pages/AgentFiles'))
 
 function PageLoader() {
   return (
@@ -42,6 +43,7 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/graph" element={<GraphExplorer />} />
+          <Route path="/agent-files" element={<AgentFiles />} />
           <Route path="*" element={<Landing />} />
         </Routes>
       </Suspense>
