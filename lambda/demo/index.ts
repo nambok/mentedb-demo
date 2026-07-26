@@ -130,8 +130,12 @@ function respond(
 // Rate limiting (DynamoDB)
 // ---------------------------------------------------------------------------
 
-async function checkRateLimit(ip: string): Promise<boolean> {
-  const key = `ip#${ip}`;
+async function checkRateLimit(
+  ip: string,
+  bucket = "ip",
+  max = MAX_REQUESTS_PER_HOUR
+): Promise<boolean> {
+  const key = `${bucket}#${ip}`;
   const nowSec = Math.floor(Date.now() / 1000);
   const windowStart = nowSec - 3600;
   const ttl = nowSec + 3600;
@@ -166,7 +170,7 @@ async function checkRateLimit(ip: string): Promise<boolean> {
       result.Attributes?.request_count?.N ?? "0",
       10
     );
-    return count <= MAX_REQUESTS_PER_HOUR;
+    return count <= max;
   } catch {
     // If the window expired, reset and allow
     await ddbClient.send(
@@ -1138,6 +1142,126 @@ async function runDemoCleanup(secrets: Secrets): Promise<number> {
   return deleted;
 }
 
+// ---------------------------------------------------------------------------
+// Agent file demo: ingest a real instruction file once, then ask for tasks
+// and watch the handful of governing rules arrive instead of the whole file.
+// ---------------------------------------------------------------------------
+
+const AGENT_FILE_SOURCE_TAG = "source:agent-file-demo";
+
+const AGENT_FILE_PRESETS: Record<string, { file_tokens: number; agent_key: string }> = {
+  codex: { file_tokens: 5600, agent_key: "af-preset:codex" },
+  kiali: { file_tokens: 17500, agent_key: "af-preset:kiali" },
+  temporal: { file_tokens: 2100, agent_key: "af-preset:temporal" },
+};
+
+function jsonResult(statusCode: number, body: unknown): LambdaResponse {
+  return { statusCode, headers: {}, body: JSON.stringify(body) };
+}
+
+async function handleAgentFileIngest(
+  req: { session_id?: unknown; content?: unknown },
+  secrets: Secrets,
+  ip: string
+): Promise<LambdaResponse> {
+  const sessionId = typeof req.session_id === "string" ? req.session_id : "";
+  const content = typeof req.content === "string" ? req.content : "";
+  if (!sessionId || content.trim().length < 200) {
+    return jsonResult(400, {
+      error: "session_id and an agent file of at least 200 characters are required",
+    });
+  }
+  if (content.length > 200_000) {
+    return jsonResult(400, { error: "File too large for the demo, the limit is 200 KB." });
+  }
+  // Parsing a pasted file runs an LLM over the whole thing, so it gets a
+  // much tighter budget than chat requests.
+  if (!(await checkRateLimit(ip, "af-ingest", 4))) {
+    return jsonResult(429, {
+      error: "Ingest limit reached for this hour. Try one of the preset files.",
+    });
+  }
+  const result = (await mentedbToolCall(secrets, "ingest_agent_file", {
+    content,
+    async: true,
+    agent_id: agentIdFor(`af:${sessionId}`),
+    source_tag: AGENT_FILE_SOURCE_TAG,
+  })) as { job_id?: string };
+  if (!result?.job_id) {
+    throw new Error("ingest_agent_file did not return a job id");
+  }
+  return jsonResult(200, {
+    job_id: result.job_id,
+    file_tokens: Math.ceil(content.length / 4),
+  });
+}
+
+async function handleAgentFileStatus(
+  params: Record<string, string | undefined>,
+  secrets: Secrets
+): Promise<LambdaResponse> {
+  const jobId = params["job_id"] ?? "";
+  if (!/^[0-9a-fA-F-]{16,64}$/.test(jobId)) {
+    return jsonResult(400, { error: "job_id is required" });
+  }
+  const status = await mentedbToolCall(secrets, "get_ingest_status", { job_id: jobId });
+  return jsonResult(200, status ?? { status: "unknown" });
+}
+
+async function handleAgentFileAsk(
+  req: { session_id?: unknown; prompt?: unknown; preset?: unknown; file_tokens?: unknown },
+  secrets: Secrets
+): Promise<LambdaResponse> {
+  const sessionId = typeof req.session_id === "string" ? req.session_id : "";
+  const prompt = typeof req.prompt === "string" ? req.prompt.trim() : "";
+  if (!sessionId || prompt.length < 4 || prompt.length > 600) {
+    return jsonResult(400, { error: "session_id and a prompt of 4 to 600 characters are required" });
+  }
+  const presetKey = typeof req.preset === "string" ? req.preset : "";
+  const preset = AGENT_FILE_PRESETS[presetKey];
+  const agentId = preset
+    ? agentIdFor(preset.agent_key)
+    : agentIdFor(`af:${sessionId}`);
+
+  const ctx = (await mentedbToolCall(secrets, "get_injection_context", {
+    query: prompt,
+    agent_id: agentId,
+    max_items: 8,
+  })) as { memories?: Array<Record<string, unknown>> };
+
+  // Receipts are only the rules that came from the ingested file; the demo
+  // account's unrelated shared seeds never show up here.
+  const rules = (ctx.memories ?? [])
+    .filter((m) => Array.isArray(m.tags) && (m.tags as string[]).includes(AGENT_FILE_SOURCE_TAG))
+    .map((m) => ({
+      content: String(m.content ?? ""),
+      type: String(m.memory_type ?? m.type ?? "semantic"),
+      reason: String(m.reason ?? "relevant"),
+      score: typeof m.score === "number" ? m.score : undefined,
+    }))
+    .filter((r) => r.content);
+
+  const memTokens = rules.reduce((s, r) => s + Math.max(1, Math.ceil(r.content.length / 4)), 0);
+  const fileTokens = preset
+    ? preset.file_tokens
+    : Math.min(Math.max(Math.round(Number(req.file_tokens) || 0), 0), 128_000);
+
+  const system =
+    "You are a coding agent working in this repository. Follow the repository " +
+    "rules below exactly where they apply. Be concise: produce the artifact or " +
+    "answer asked for, nothing else.\n\nRepository rules:\n" +
+    rules.map((r) => `- ${r.content}`).join("\n");
+  const answer = await callBedrock(system, [{ role: "user", content: prompt }]);
+
+  return jsonResult(200, {
+    answer,
+    rules,
+    mem_tokens: memTokens,
+    file_tokens: fileTokens,
+    model: BEDROCK_MODEL_DISPLAY,
+  });
+}
+
 export const handler = async (
   event: LambdaFunctionUrlEvent
 ): Promise<LambdaResponse> => {
@@ -1233,6 +1357,21 @@ export const handler = async (
         body as { session_id?: string; text?: string; turn_id?: number },
         secrets
       );
+      return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
+    }
+
+    if (method === "POST" && path === "/api/agent-file/ingest") {
+      const result = await handleAgentFileIngest(body, secrets, clientIp);
+      return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
+    }
+
+    if (method === "GET" && path === "/api/agent-file/status") {
+      const result = await handleAgentFileStatus(event.queryStringParameters ?? {}, secrets);
+      return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
+    }
+
+    if (method === "POST" && path === "/api/agent-file/ask") {
+      const result = await handleAgentFileAsk(body, secrets);
       return { ...result, headers: { ...result.headers, ...corsHeaders(origin) } };
     }
 

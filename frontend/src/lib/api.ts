@@ -117,3 +117,73 @@ export async function explore(sessionId: string, text: string, turnId: number): 
   }
   return res.json();
 }
+
+// --- Agent file demo ---
+
+export interface AgentFileRule {
+  content: string;
+  type: string;
+  reason: string;
+  score?: number;
+}
+
+export interface AgentFileAskResponse {
+  answer: string;
+  rules: AgentFileRule[];
+  mem_tokens: number;
+  file_tokens: number;
+  model: string;
+}
+
+export interface IngestStatus {
+  status: 'running' | 'done' | 'failed' | 'unknown';
+  report?: {
+    candidates?: number;
+    stored?: number;
+    deduplicated?: number;
+    trigger_tagged?: number;
+    sections?: number;
+    parsed_by?: string;
+    error?: string;
+  } | null;
+}
+
+export async function ingestAgentFile(
+  sessionId: string,
+  content: string
+): Promise<{ job_id: string; file_tokens: number }> {
+  const res = await fetch(`${BASE}/api/agent-file/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, content }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Ingest failed' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function agentFileStatus(jobId: string): Promise<IngestStatus> {
+  const res = await fetch(`${BASE}/api/agent-file/status?job_id=${encodeURIComponent(jobId)}`);
+  if (!res.ok) return { status: 'unknown' };
+  return res.json();
+}
+
+export async function askAgentFile(req: {
+  session_id: string;
+  prompt: string;
+  preset?: string;
+  file_tokens?: number;
+}): Promise<AgentFileAskResponse> {
+  const res = await fetch(`${BASE}/api/agent-file/ask`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Ask failed' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
