@@ -1110,12 +1110,19 @@ async function runDemoCleanup(secrets: Secrets): Promise<number> {
     });
     if (!resp.ok) break;
     const data = (await resp.json()) as {
-      memories?: Array<{ memory_id: string; created_at: string }>;
+      memories?: Array<{ memory_id: string; created_at: string; agent_id: string }>;
       next_cursor?: string;
     };
     const mems = data.memories ?? [];
     if (!mems.length) break;
+    // The seeded preset agent files are permanent fixtures of the demo, not
+    // visitor debris; retention must never sweep them (it did once, which
+    // left the agent files demo answering with zero receipts).
+    const presetAgents = new Set(
+      Object.values(AGENT_FILE_PRESETS).map((p) => agentIdFor(p.agent_key))
+    );
     for (const m of mems) {
+      if (presetAgents.has(m.agent_id)) continue;
       if (Number(m.created_at) < cutoffMicros) toDelete.push(m.memory_id);
     }
     cursor = data.next_cursor ?? "";
